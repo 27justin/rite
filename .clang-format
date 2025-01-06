@@ -1,0 +1,22 @@
+Language: Cpp
+BasedOnStyle: Mozilla
+UseTab: Never
+ColumnLimit: 200
+IndentWidth: 4
+TabWidth: 4
+PointerAlignment: Right
+AccessModifierOffset: 0
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: None
+AlignConsecutiveAssignments: None
+AllowShortLambdasOnASingleLine: Inline
+BinPackParameters: false
+BinPackArguments: false
+BreakBeforeBraces: Attach
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+AlignConsecutiveDeclarations: true
+AlignTrailingComments: true
+AllowShortBlocksOnASingleLine: Empty  # Prevent short blocks from being on a single line
+AllowShortCaseLabelsOnASingleLine: false  # Prevent short case labels from being on a single line
+
+---
