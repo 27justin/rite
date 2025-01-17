@@ -130,7 +130,7 @@ void
 odin_endpoint::setup(kana::controller_config &config) {
     config.add_endpoint(kana::endpoint{ .method = GET, .path = std::regex(std::format("{}/?$", prefix_)), .handler = [this](auto &r) {
                                            return index(r);
-                                       } });
+    }, .asynchronous = true });
 
     config.add_endpoint(kana::endpoint{ .method = GET, .path = "/__server/css", .handler = std::bind(&odin_endpoint::css, this, std::placeholders::_1) });
     config.add_endpoint(
@@ -287,7 +287,7 @@ odin_endpoint::card(http_request &request) {
 
 http_response
 odin_endpoint::request_list(http_request &request) {
-    size_t num = request.query().get<std::string>("num").and_then([](std::string v) -> std::optional<size_t> { return std::stoi(v); }).value_or(20);
+    size_t num = request.query().get<size_t>("num").value_or(20);
 
     std::string body = "";
     {

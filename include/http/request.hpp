@@ -15,6 +15,7 @@
 #include "header_map.hpp"
 #include "method.hpp"
 #include "query_parameters.hpp"
+#include "version.hpp"
 
 template<typename T>
 class parser;
@@ -27,6 +28,7 @@ struct http_request {
     std::vector<std::byte>               body_;
     header_map                           headers_;
     std::unordered_map<size_t, std::any> context_;
+    http_version                         version_;
 
     // std::shared_ptr<connection> client_;
     connection          *client_;

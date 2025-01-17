@@ -50,10 +50,9 @@ main() {
     // clang-format off
     server.worker_threads(10)
           .bind({ INADDR_ANY, 2002, kana::protocol::http })
-          // .load_extension<kana::extensions::odin>(kana::extensions::odin_config {
-          //     .admin_path = "/__server"
-          // });
-        ;
+          .load_extension<kana::extensions::odin>(kana::extensions::odin_config {
+              .admin_path = "/__server"
+          });
     server.start();
     return 0;
 }

@@ -38,7 +38,7 @@ class server {
     std::list<std::unique_ptr<kana::controller>>             controllers_;
     std::list<std::unique_ptr<kana::extension>>              extensions_;
 
-    std::vector<std::atomic<uintptr_t>> connections_;
+    std::vector<connection*> connections_;
     mutable std::mutex                            connection_mtx_;
 
     struct {

@@ -67,14 +67,15 @@ struct http_response {
     /// Set the response body.
     /// When sending large response bodies, prefer to use `stream`
     void body(const std::string &val) {
-        std::vector<std::byte> body_ {};
-        body_.clear();
-        body_.resize(val.size());
-        std::transform(val.begin(), val.end(), body_.begin(), [](char c) { return static_cast<std::byte>(c); });
-        set_content_length(val.size());
+        std::unique_ptr<std::byte[]> heap_mem = std::make_unique<std::byte[]>( val.size() );
+        std::span<const std::byte> span = std::span<const std::byte>((const std::byte *) val.data(), val.size());
+        std::copy(span.begin(), span.end(), heap_mem.get());
 
-        stream(std::move(body_));
-        stream(kana::buffer::finish());
+        stream(kana::buffer(
+                std::move(heap_mem),
+                val.size(),
+                true
+              ));
     }
 
     void event(event ev, std::function<void(http_response &)> &&callback) { events_[ev] = std::move(callback); }

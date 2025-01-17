@@ -29,6 +29,20 @@ parser<http_request>::parse(connection *conn, std::span<const std::byte> data, h
         return false;
     }
 
+    std::print("Version: {}\n", version);
+
+    if (version == "1.1") {
+        req.version_ = http_version::HTTP_1_1;
+    } else if (version == "2.0") {
+        req.version_ = http_version::HTTP_2_0;
+    } else if (version == "3.0") {
+        req.version_ = http_version::HTTP_3_0;
+    } else if (version == "1.0") {
+        req.version_ = http_version::HTTP_1_0;
+    } else {
+        return false;
+    }
+
     if (path.find('?') != std::string::npos) {
         query_parameters query = parser<query_parameters>{}.parse(path).value();
         req.query_ = query;

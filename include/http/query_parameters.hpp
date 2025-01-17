@@ -10,6 +10,20 @@
 template<typename T>
 class parser;
 
+
+template<typename T>
+struct pluggable;
+
+template<typename T>
+struct pluggable<std::vector<T>> {
+    using value_type = void;
+};
+
+template<typename T>
+struct pluggable {
+    using value_type = T;
+};
+
 class query_parameters {
     std::vector<std::pair<std::string, std::string>> parameters_;
 
@@ -17,7 +31,7 @@ class query_parameters {
 
     public:
     template<typename T>
-    std::enable_if_t<!std::is_same_v<T, std::vector<typename T::value_type>>, std::optional<T>>
+    std::enable_if_t<std::is_same_v<T, typename pluggable<T>::value_type>, std::optional<T>>
     get(const std::string_view &key) const {
         for (const auto &[pkey, value] : parameters_) {
             if (key == pkey) {
