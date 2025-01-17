@@ -78,11 +78,6 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
 
 void
 connection<h2::protocol>::process(std::span<std::byte> span) {
-    if (!lock_.try_lock()) {
-        std::print("H2[process|error]: Refusing to read event, socket is locked\n");
-        return;
-    }
-
     auto pos = span.begin();
 start:
     switch (state_) {
@@ -169,72 +164,74 @@ start:
 
             std::print("H2[process]: Received data in idle state\n");
             switch (frame->type) {
-                case h2::frame::type::SETTINGS: {
-                    // Client likely acknowledged our settings.
-                    // The HTTP specification says that the ACK should happen, but not in a specific order
-                    // thus we handle it as though optional.
-                    if ((frame->flags & h2::frame::characteristics<h2::frame::SETTINGS>::ACK) == 1) {
-                        std::print("H2[process]: Client acknowledged settings\n");
-                    }
+            case h2::frame::type::SETTINGS: {
+                // Client likely acknowledged our settings.
+                // The HTTP specification says that the ACK should happen, but not in a specific order
+                // thus we handle it as though optional.
+                if ((frame->flags & h2::frame::characteristics<h2::frame::SETTINGS>::ACK) == 1) {
+                    std::print("H2[process]: Client acknowledged settings\n");
+                }
+                break;
+            }
+            case h2::frame::type::WINDOW_UPDATE: {
+                // Flow control:
+                // We do not support flow control /yet/. I may add this in the future
+                break;
+            }
+            case h2::frame::type::CONTINUATION:
+                __attribute__((fallthrough));
+            case h2::frame::type::HEADERS: {
+                std::print("Received HEADER or CONTINUATION frame\n");
+                auto result = parameters_->hpack.rx.parse(*frame);
+                switch (result) {
+                case h2::hpack::error::eUnknownHeader: {
+                    // TODO: throw decoding error and (probably) terminate the connection
                     break;
                 }
-                case h2::frame::type::HEADERS: {
-                    if (frame->flags & h2::frame::characteristics<h2::frame::HEADERS>::END_HEADERS) {
-
-                        auto result = parameters_->hpack.rx.parse(*frame);
-                        switch (result) {
-                        case h2::hpack::error::eUnknownHeader: {
-                            // TODO: throw decoding error and (probably) terminate the connection
-                            break;
-                        }
-                        case h2::hpack::error::eSizeUpdate: {
-                            // This warrants an ACK to the client
-                            write(h2::frame{ .length = 0, .type = h2::frame::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .data = {} });
-                            __attribute__((fallthrough));
-                        }
-                        case h2::hpack::error::eMore: {
-                            std::print("H2[process]: HPACK is missing data (no END_HEADERS bit set), waiting for more CONTINUATION or HEADERS frames.\n");
-                            break;
-                        }
-                        case h2::hpack::error::eDone: {
-                            // Print out the headers
-                            auto headers = parameters_->hpack.rx.result();
-                            // for (auto const &[k, v] : headers) {
-                                // std::print("{}: {}\n", k, v);
-                            // }
-
-                            // Generate a dummy response
-                            std::vector<h2::hpack::header> response_headers = {
-                                h2::hpack::header{ .key = ":status", .value = "302" },
-                                h2::hpack::header{"cache-control", "private"},
-                                h2::hpack::header{ .key = "content-type", .value = "text/html; charset=UTF-8" },
-                                h2::hpack::header{ .key = "server", .value = "WIP-CPP/0.1.1" },
-                                h2::hpack::header{"content-length", "12"}
-                            };
-                            parameters_->hpack.tx.serialize(response_headers);
-                            h2::frame response = parameters_->hpack.tx.finish(frame->stream_identifier);
-                            write(response);
-
-                            h2::frame dummy = {
-                                .length = 12,
-                                .flags = h2::frame::characteristics<h2::frame::DATA>::END_STREAM,
-                                .stream_identifier = frame->stream_identifier,
-                                .data = {}
-                            };
-                            const char DUMMY_RESPONSE[] = "Hello, world!";
-                            dummy.data.insert(dummy.data.begin(), (std::byte *) DUMMY_RESPONSE, (std::byte *) DUMMY_RESPONSE + sizeof(DUMMY_RESPONSE));
-                            write(dummy);
-
-                            std::print("Sent out frame with stream ID 3\n");
-                            break;
-                        }
-                        }
-                    } else {
-                        std::print("ERROR: Received HEADERS frame that is not enclosed within itself, END_HEADERS flag was not set. This is not yet supported.\n");
-                        std::exit(1);
-                    }
+                case h2::hpack::error::eSizeUpdate: {
+                    // This warrants an ACK to the client
+                    write(h2::frame{ .length = 0, .type = h2::frame::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .data = {} });
+                    __attribute__((fallthrough));
+                }
+                case h2::hpack::error::eMore: {
+                    std::print("H2[process]: HPACK is missing data (no END_HEADERS bit set), waiting for more CONTINUATION or HEADERS frames.\n");
                     break;
                 }
+                case h2::hpack::error::eDone: {
+                    // Print out the headers
+                    auto headers = parameters_->hpack.rx.result();
+                    // for (auto const &[k, v] : headers) {
+                    // std::print("{}: {}\n", k, v);
+                    // }
+
+                    // Generate a dummy response
+                    std::vector<h2::hpack::header> response_headers = {
+                        h2::hpack::header{ .key = ":status", .value = "302" },
+                        h2::hpack::header{"cache-control", "private"},
+                        h2::hpack::header{ .key = "content-type", .value = "text/html; charset=UTF-8" },
+                        h2::hpack::header{ .key = "server", .value = "WIP-CPP/0.1.1" },
+                        h2::hpack::header{"content-length", "12"}
+                    };
+                    parameters_->hpack.tx.serialize(response_headers);
+                    h2::frame response = parameters_->hpack.tx.finish(frame->stream_identifier);
+                    write(response);
+
+                    h2::frame dummy = {
+                        .length = 12,
+                        .flags = h2::frame::characteristics<h2::frame::DATA>::END_STREAM,
+                        .stream_identifier = frame->stream_identifier,
+                        .data = {}
+                    };
+                    const char DUMMY_RESPONSE[] = "Hello, world!";
+                    dummy.data.insert(dummy.data.begin(), (std::byte *) DUMMY_RESPONSE, (std::byte *) DUMMY_RESPONSE + sizeof(DUMMY_RESPONSE));
+                    write(dummy);
+
+                    std::print("Sent out frame with stream ID 3\n");
+                    break;
+                }
+                }
+                break;
+            }
                 case h2::frame::type::DATA: {
                     __attribute__((fallthrough));
                 }

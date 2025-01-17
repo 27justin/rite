@@ -10,6 +10,16 @@ constexpr static size_t MAX_FRAME_SIZE = 1024 * 1024 * 4; // 4 MiB
 namespace h2 {
     enum class frame_state { eInsufficientData, eInvalid, eTooBig };
 
+    struct stream {
+        enum stream_state {
+            idle,
+            open,
+            half_closed
+        };
+        stream_state state;
+        uint32_t stream_id;
+    };
+
     struct frame {
         enum type : uint8_t { DATA = 0x0, HEADERS = 0x1, PRIORITY = 0x2, RST_STREAM = 0x3, SETTINGS = 0x4, PUSH_PROMISE = 0x5, PING = 0x6, GOAWAY = 0x7, WINDOW_UPDATE = 0x8, CONTINUATION = 0x9 };
 

@@ -34,6 +34,9 @@ kana::server<https>::on_accept(connection<void>::native_handle socket, struct so
 void
 kana::server<https>::on_read(connection<void> *socket) {
     static thread_local std::unique_ptr<std::byte[]> buffer = std::make_unique<std::byte[]>(16384);
+    auto lock = socket->lock();
+
+    std::print("on_read: "); std::cout << socket << "\n";
 
     ssize_t bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
     if (bytes < 1) {
@@ -45,7 +48,7 @@ kana::server<https>::on_read(connection<void> *socket) {
 
     connection<h2::protocol> *h2_sock = dynamic_cast<connection<h2::protocol> *>(socket);
     if (h2_sock) {
-        try{
+        try {
             h2_sock->process(std::span<std::byte>(buffer.get(), bytes));
         } catch (std::exception &e) {
             std::print("H2[process]: Failed: {}\n", e.what());

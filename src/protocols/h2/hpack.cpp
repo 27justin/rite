@@ -1,6 +1,8 @@
 #include "protocols/h2/hpack.hpp"
 #include "protocols/h2/headers.hpp"
 #include <algorithm>
+#include <bitset>
+#include <cstdint>
 #include <iomanip>
 #include <ios>
 #include <stdexcept>
@@ -22,113 +24,109 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
     auto                            pos = payload.cbegin();
     ssize_t                         len = 0;
 
-    while (pos != payload.cend()) {
-        // First check for category: Literal Header without Indexing
-        uint8_t start = static_cast<uint8_t>(*pos);
-
-        // 7-bit prefix variable length integer for 'Indexed Header Representation'
-        if (start & 0b1000'0000) {
-            auto index = h2::variable_integer<7>::decode(std::span<const std::byte>(pos, payload.cend()), len);
-            pos += len;
-            auto header = header_by_index(index);
-            if (header == nullptr) {
-                // TODO: What do we have to do in this case?
-                std::print("Access to indexed header that does not exist: {}\n", index);
-                std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)*pos;
-                return h2::hpack::error::eUnknownHeader;
-            }
-            decoded_.push_back(*header);
-            continue;
-        }
-
-        if (start & 0b0100'0000) {
-            // Literal header with incremental indexing
-            auto index = h2::variable_integer<6>::decode(std::span<const std::byte>(pos, payload.cend()), len);
-            pos += len;
-
-            std::string key;
-            if (index == 0) {
-                key = parse_string(pos, payload);
-            } else {
-                auto header = header_by_index(index);
-                if (header != nullptr)
-                    key = header->key;
-                else {
-                    // TODO: Error?
-                }
-            }
-
-            std::string value = parse_string(pos, payload);
-
-            // o  A literal representation that adds the header field as a new entry
-            // at the beginning of the dynamic table (see Section 6.2.1).
-            header_map_.push_front(h2::hpack::header{ .key = key, .value = value });
-            decoded_.push_back(h2::hpack::header{ .key = key, .value = value });
-            continue;
-        }
-
-        if ((start & 0b1111'0000) == 0) {
-            // Literal Header Field without Indexing
-            auto index = h2::variable_integer<4>::decode(std::span<const std::byte>(pos, payload.cend()), len);
-            pos += len;
-
-            std::string key;
-            if (index == 0) {
-                key = parse_string(pos, payload);
-            } else {
-                auto header = header_by_index(index);
-                if (header != nullptr)
-                    key = header->key;
-                else {
-                    // TODO: Error?
-                }
-            }
-            std::string value = parse_string(pos, payload);
-            decoded_.push_back(h2::hpack::header{ .key = key, .value = value });
-            continue;
-        }
-
-        if ((start & 0b0001'0000)) {
-            // Literal Header Field Never Indexed
-            auto index = h2::variable_integer<4>::decode(std::span<const std::byte>(pos, payload.cend()), len);
-            pos += len;
-
-            std::string key;
-            if (index == 0) {
-                key = parse_string(pos, payload);
-            } else {
-                auto header = header_by_index(index);
-                if (header != nullptr)
-                    key = header->key;
-                else {
-                    // TODO: Error?
-                }
-            }
-            std::string value = parse_string(pos, payload);
-            decoded_.push_back(h2::hpack::header{ .key = key, .value = value });
-            continue;
-        }
-
-        if ((start & 0b0010'0000)) {
-            // Dynamic Table Size Update
-            auto size = h2::variable_integer<5>::decode(std::span<const std::byte>(pos, payload.cend()), len);
-            pos += len;
-            std::print("HPACK[parse]: dynamic table update to: {}\n", size);
-
-            if (size < header_map_.size()) {
-                while (header_map_.size() > size) {
-                    // Remove oldest entry
-                    header_map_.pop_back();
-                }
-            } // TODO: I don't think that we have to handle the `else`
-              // in our case.  but read up on RFC 7541 Section 4.2.
-              // Maximum Table Size to be sure.
-            return h2::hpack::error::eSizeUpdate;
-        }
+    std::print("-------------------------\n");
+    for (std::byte &byte : payload) {
+        std::print("\\x{:02x}", static_cast<uint8_t>(byte));
     }
+    std::print("\n");
 
-    std::print("Dynamic header size: {}\n", header_map_.size());
-    return frame.flags & (h2::payload<h2::frame::HEADERS>::flags::END_HEADERS | h2::payload<h2::frame::HEADERS>::flags::END_STREAM) ? h2::hpack::error::eDone : h2::hpack::error::eMore;
+    try {
+        while (pos != payload.cend()) {
+            // First check for category: Literal Header without Indexing
+            uint8_t start = static_cast<uint8_t>(*pos);
+            // auto begin = pos;
+
+            if (start & 0x80) { // Indexed
+                // std::print("{:02x} INDEXED\n", start);
+                auto index = h2::variable_integer<7>::decode(std::span<const std::byte>(pos, payload.cend()), len);
+                pos += len;
+                auto header = header_by_index(index);
+                // std::print("Emitting '{}' (indexed)\n", header->key);
+                decoded_.push_back(*header);
+                goto next;
+            }
+
+            if (start & 0x40) { // Literal indexed
+                // std::print("{:02x} LITERAL\n", start);
+                // 6-bit prefix index
+                auto index = h2::variable_integer<6>::decode(std::span<const std::byte>(pos, payload.cend()), len);
+                // std::print("vlen: {}\n", len);
+                pos += len;
+
+                std::string key, value;
+                if (index == 0) {
+                    key = parse_string(pos, payload);
+                } else {
+                    key = header_by_index(index)->key;
+                }
+                value = parse_string(pos, payload);
+
+                // std::print("Indexed '{}'\n", key);
+                decoded_.push_back(h2::hpack::header { key, value });
+                header_map_.push_front(h2::hpack::header { key, value });
+                goto next;
+            }
+
+            if (start & 0x20) { // Header table update
+                // std::print("{:02x} TABLE UPDATE\n", start);
+                // Dynamic Table Size Update
+                auto size = h2::variable_integer<5>::decode(std::span<const std::byte>(pos, payload.cend()), len);
+                pos += len;
+                // std::print("HPACK[parse]: dynamic table update to: {}\n", size);
+
+                if (size < header_map_.size()) {
+                    while (header_map_.size() > size) {
+                        // Remove oldest entry
+                        header_map_.pop_back();
+                    }
+                } // TODO: I don't think that we have to handle the `else`
+                // in our case.  but read up on RFC 7541 Section 4.2.
+                // Maximum Table Size to be sure.
+                // return h2::hpack::error::eSizeUpdate;
+                goto next;
+            }
+
+            {
+                // std::print("{:02x} NOTHING\n", start);
+                // Not indexed
+                // 4-bit prefix index
+                auto index = h2::variable_integer<4>::decode(std::span<const std::byte>(pos, payload.cend()), len);
+                pos += len;
+
+                std::string key, value;
+                if (index == 0) {
+                    key = parse_string(pos, payload);
+                } else {
+                    key = header_by_index(index)->key;
+                }
+                // std::print("Emitting '{}'\n", key);
+                value = parse_string(pos, payload);
+                // header_map_.push_front(h2::hpack::header { key, value });
+                decoded_.push_back(h2::hpack::header { key, value });
+            }
+          next:
+            // auto sub = pos;
+            // std::print("=> ");
+            // for (; begin != sub; ++begin) {
+                // std::print("\\x{:02x}", static_cast<uint8_t>(*begin));
+            // }
+            // std::print("\n----------------\n");
+
+            continue;
+        }
+
+        // std::print("Current header indexing: \n");
+        // for (size_t i = 0; i < header_map_.size(); ++i) {
+        //     auto const &h = header_map_[i];
+        //     std::print("[{}] {}: {}\n", i, h.key, h.value);
+        // }
+        // std::print("----------------------------\n");
+
+        // std::print("Dynamic header size: {}\n", header_map_.size());
+        return frame.flags & (h2::payload<h2::frame::HEADERS>::flags::END_HEADERS | h2::payload<h2::frame::HEADERS>::flags::END_STREAM) ? h2::hpack::error::eDone : h2::hpack::error::eMore;
+    } catch (h2::hpack::error err) {
+        return err;
+    }
 }
 
 std::string
@@ -142,9 +140,10 @@ parser<h2::hpack>::parse_string(std::span<std::byte>::const_iterator &pos, std::
     */
     bool    is_huffman = static_cast<uint8_t>(*pos) & 0b1000'0000;
     ssize_t len = 0;
-    auto    length = h2::variable_integer<7>::decode(payload.subspan(std::distance(payload.cbegin(), pos)), len);
+    auto    length = h2::variable_integer<7>::decode(std::span<const std::byte>(pos, payload.cend()), len);
     // Skip the `Value Length`
     pos += len;
+
 
     // Read `length` bytes as the string starting from `pos`
     std::string raw((const char *)&(*pos), length);
@@ -160,31 +159,29 @@ parser<h2::hpack>::parser() {}
 
 const h2::hpack::header *
 parser<h2::hpack>::header_by_index(uint32_t index) {
-    if (h2::hpack::STATIC_HEADER_TABLE.contains(index)) {
+    if (index < h2::hpack::STATIC_HEADER_TABLE.size())
         return &h2::hpack::STATIC_HEADER_TABLE[index];
-    }
 
     /*
       Indices strictly greater than the length of the static table refer to
       elements in the dynamic table (see Section 2.3.2).  The length of the
       static table is subtracted to find the index into the dynamic table.
     */
-    std::print("Looking for index {} ({}) (#{})\n", index, index - h2::hpack::STATIC_HEADER_TABLE.size(), header_map_.size());
-    index = index - h2::hpack::STATIC_HEADER_TABLE.size() - 1;
-    if (header_map_.size() > index)
+
+    index -= h2::hpack::STATIC_HEADER_TABLE.size();
+    index -= 1;
+    std::print("Looking for index {} (#{})\n", index, header_map_.size());
+    if (index < header_map_.size())
         return &header_map_[index];
     // Indices strictly greater than the sum of the lengths of both tables
     // MUST be treated as a decoding error.
-    // TODO: Should return a expected<header, h2::hpack::error>
-    return nullptr;
+    throw h2::hpack::error::eUnknownHeader;
 }
 
 h2::hpack::headers &&
 parser<h2::hpack>::result() {
     return std::move(decoded_);
 }
-
-
 
 std::variant<serializer<h2::hpack>::fully_indexed, serializer<h2::hpack>::key_indexed, serializer<h2::hpack>::literal>
 serializer<h2::hpack>::search_index(const h2::hpack::header &h) {

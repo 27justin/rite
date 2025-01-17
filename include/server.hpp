@@ -3,6 +3,7 @@
 #include "connection.hpp"
 #include "runtime.hpp"
 #include <asm-generic/socket.h>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -123,6 +124,7 @@ kana::server<T>::operator()() {
     std::unique_ptr<struct epoll_event[]> events = std::make_unique_for_overwrite<struct epoll_event[]>(base_config_.max_connections_);
     struct sockaddr_storage               client_address;
     socklen_t client_address_len;
+    std::print("Server ready.\n");
     for (;;) {
         size_t ready = epoll_wait(fd.epoll, events.get(), base_config_.max_connections_, -1);
         for (size_t i = 0; i < ready; ++i) {
@@ -135,7 +137,7 @@ kana::server<T>::operator()() {
                 }
 
                 struct epoll_event ev;
-                ev.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
+                ev.events = EPOLLIN | EPOLLET;
                 {
                     connection<void> *con = on_accept(client_socket, &client_address, client_address_len);
                     auto next_it = std::find_if(connections_.begin(), connections_.end(), [](auto ptr) {
@@ -158,14 +160,16 @@ kana::server<T>::operator()() {
                     perror("Failed to add epoll socket");
                 }
             } else { // Client event
-                if ((event.events & (EPOLLIN | EPOLLHUP | EPOLLERR)) != 0) {
+                if (event.events & EPOLLIN) {
                     connection<void> *client = reinterpret_cast<connection<void> *>(connections_[event.data.u64]);
-                    std::cout<<("Have event on client ")<<client<<std::endl;;
                     if (((uintptr_t)client & ((uintptr_t)1 << 63)) != 0) {
                         // Event was dispatched for client that has already been deallocated.
                         std::cout<<"Skipping dead client"<<std::endl;
                         continue;
                     }
+                    // TODO: Check if connection is locked,
+                    // if it is, remove the EPOLLET behaviour
+                    // and retry adding the task to the thread pool.
 
                     client = reinterpret_cast<connection<void>*>(((uintptr_t) client) & ((~0ULL) >> 16));
                     client->take();

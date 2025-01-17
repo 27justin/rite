@@ -12,9 +12,9 @@ class runtime {
 
     public:
     template<typename T>
-    void attach(T &&run) {
+    void attach(T &run) {
         run.runtime = this;
-        std::thread([run]() mutable { run(); }).detach();
+        std::thread([&run]() mutable { run(); }).detach();
     }
 
     void worker_threads(size_t);

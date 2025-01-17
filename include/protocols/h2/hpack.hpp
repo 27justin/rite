@@ -84,11 +84,12 @@ struct variable_integer {
             uint32_t value = (1u << N) - 1; // Start with the maximum value for the prefix
             uint32_t shift = 0;
 
-            for (size_t i = 1; i < data.size(); ++i, ++bytes) {
+            for (size_t i = 1; i < data.size(); ++i) {
                 uint8_t byte = static_cast<uint8_t>(data[i]);
                 value += (byte & 0x7F) << shift; // Add the 7 bits
                 shift += 7;                      // Move to the next 7 bits
 
+                bytes++;
                 if ((byte & 0x80) == 0) {
                     // If the continuation bit is not set, we are done
                     break;
