@@ -14,6 +14,7 @@
 #include <netinet/in.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <thread>
 #include <unistd.h>
 #include <netinet/tcp.h>
 
@@ -24,6 +25,12 @@
 #include <future>
 #include <http/parser.hpp>
 #include <http/serializer.hpp>
+
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+#include <plain.hpp>
+#include <tls.hpp>
 
 #define BENCHMARK_MS(label, expr)                                                                                                                                                                         \
     {                                                                                                                                                                                                  \
@@ -43,8 +50,6 @@
         \
     }
 
-using socket_fd = int;
-
 void
 kana::server::finish_http_request(http_request &request, http_response &response) {
     trigger(kana::server::event::pre_send, request, response);
@@ -53,7 +58,7 @@ kana::server::finish_http_request(http_request &request, http_response &response
         .serialize_body = false // Streamed, only serialize known
                                 // portion of the response
     }(response);
-    send(request.socket(), payload.data(), payload.size(), MSG_MORE);
+    if(request.client()->write(payload, MSG_MORE) < 1) return;
 
     kana::buffer                            b;
     std::shared_ptr<jt::mpsc<kana::buffer>> channel = response.channel;
@@ -61,20 +66,20 @@ kana::server::finish_http_request(http_request &request, http_response &response
     do {
         response.trigger(http_response::event::chunk);
         b = rx.wait();
-        send(request.socket(), b.data.get(), b.len, MSG_NOSIGNAL | (b.last ? 0 : MSG_MORE));
+        if(request.client()->write(std::span<std::byte>(b.data.get(), b.len), MSG_NOSIGNAL | (b.last ? 0 : MSG_MORE)) < 1) return;
     } while (!b.last);
     trigger(kana::server::event::post_send, request, response);
     response.trigger(http_response::event::finish);
 }
 
 void
-dbg_finish(connection &con, http_response &response) {
+dbg_finish(connection<void> &con, http_response &response) {
     // Send everything but the body
     std::vector<std::byte> payload = serializer<http_response>{
         .serialize_body = false // Streamed, only serialize known
                                 // portion of the response
     }(response);
-    if(send(con.socket(), payload.data(), payload.size(), MSG_MORE) < 1) return;
+    if(con.write(payload, MSG_MORE) < 1) return;
 
     kana::buffer                            b;
     std::shared_ptr<jt::mpsc<kana::buffer>> channel = response.channel;
@@ -82,32 +87,34 @@ dbg_finish(connection &con, http_response &response) {
     do {
         // response.trigger(http_response::event::chunk);
         b = rx.wait();
-        if(send(con.socket(), b.data.get(), b.len, MSG_NOSIGNAL | (b.last ? 0 : MSG_MORE)) < 1) return;
+        if(con.write(std::span<std::byte>(b.data.get(), b.len), MSG_NOSIGNAL | (b.last ? 0 : MSG_MORE)) < 1) return;
     } while (!b.last);
     response.trigger(http_response::event::finish);
 }
 
 void
 kana::server::start() {
-    // Thread pool
-    int epfd;
-
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
     // jt::mpsc<std::shared_ptr<connection>> worker_pool{};
-    jt::mpsc<size_t> worker_pool{};
+    jt::mpsc<std::tuple<size_t, server_bind_config *>> worker_pool{};
     // jt::mpsc<sockfd> worker_pool{};
 
     auto &work = worker_pool.rx();
     for (size_t i = 0; i < server_config.worker_threads; ++i) {
-        std::thread([&work, &worker_pool, &epfd, i, this]() -> void {
+        std::thread([&work, &worker_pool, i, this]() -> void {
             static std::unique_ptr<std::byte[]> buffer = std::make_unique<std::byte[]>(server_config.worker_buffer_size);
 
             while (true) {
-                size_t index = std::move(work.wait());
-                connection **raw_client = &connections_[index];
-                uintptr_t mask = (~(0ULL) >> 16);
-                connection *client = reinterpret_cast<connection *>(((uintptr_t) (*raw_client)) & mask);
+                server_bind_config *ctx;
+                size_t index;
+                std::tie(index, ctx) = work.wait();
 
-                ssize_t bytes = recv(client->socket(), buffer.get(), server_config.worker_buffer_size, 0);
+                connection<void> **raw_client = &ctx->connections_[index];
+                uintptr_t mask = (~(0ULL) >> 16);
+                connection<void> *client = reinterpret_cast<connection<void> *>(((uintptr_t) (*raw_client)) & mask);
+
+                ssize_t bytes = client->read(std::span<std::byte>(buffer.get(), server_config.worker_buffer_size), 0); //recv(client->socket(), buffer.get(), server_config.worker_buffer_size, 0);
                 if (bytes < 1) {
                     std::cout << " Worker encountered bad sockfd: " << client->socket() << std::endl;
                     // Release root ref, with this the socket should
@@ -185,93 +192,135 @@ kana::server::start() {
     }
 
     // Networking
+    std::vector<std::thread> active_threads;
+    for (auto const &binding : server_config.bind) {
+        // TODO: IPv6
+        uint32_t ip_;
+        uint16_t port_;
+        std::variant<kana::http_config, kana::https_config> protocol_config;
+        std::unique_ptr<server_bind_config> current = std::make_unique<server_bind_config>();
+        std::tie(ip_, port_, protocol_config) = binding;
 
-    int sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
-    int enable = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int));
-    setsockopt(sock, SOL_SOCKET, TCP_NODELAY, &enable, sizeof(int));
+        // TODO: Urgh.... properly encapsulate this
+        SSL_CTX *ctx = nullptr;
 
-    struct sockaddr_in server_addr {
-        .sin_family = AF_INET, .sin_port = htons(std::get<1>(server_config.bind[0])), .sin_addr = { 0 }, .sin_zero = { 0 }
-    };
-    server_addr.sin_addr.s_addr = htonl(std::get<0>(server_config.bind[0]));
+        if (std::holds_alternative<kana::http_config>(protocol_config))
+            current->protocol_ = kana::protocol::http;
+        else if(std::holds_alternative<kana::https_config>(protocol_config)) {
+            current->protocol_ = kana::protocol::https;
+            const SSL_METHOD *method = TLS_server_method();
+            ctx = SSL_CTX_new(method);
 
-    int result = ::bind(sock, (const sockaddr *)&server_addr, sizeof(server_addr));
-    if (result < 0) {
-        perror("Failed to bind socket");
-    }
-
-    result = listen(sock, server_config.max_connections);
-    // result = listen(sock, SOMAXCONN);
-    connections_.resize(server_config.max_connections, (connection *) ((uintptr_t) 1 << 63));
-
-    std::unique_ptr<struct epoll_event[]> events = std::make_unique<struct epoll_event[]>(server_config.max_connections + 1);
-    // Add server socket to epollfd
-    {
-        epfd = epoll_create(1);
-        struct epoll_event event;
-        event.events = EPOLLIN;
-        event.data.fd = sock;
-        epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &event);
-    }
-
-    struct sockaddr_storage client_address {};
-    socklen_t               client_address_len = 0;
-
-    for (;;) {
-        // std::print("Server-Thread: Waiting for events\n");
-        // std::print("We are waiting for events.\n");
-        size_t ready = epoll_wait(epfd, events.get(), server_config.max_connections + 1, -1);
-        for (size_t i = 0; i < ready; i++) {
-            struct epoll_event &event = events[i];
-            if (event.data.fd == sock) { // Server socket
-                int client_socket = accept(sock, (struct sockaddr *)&client_address, &client_address_len);
-                if (client_socket < 1) {
-                    perror("Failed to accept client");
-                    continue;
-                }
-                setsockopt(client_socket, SOL_SOCKET, TCP_NODELAY, &enable, sizeof(int));
-
-                struct epoll_event ev;
-                ev.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
-                {
-                    auto *con = new connection(client_socket, epfd, client_address, client_address_len);
-                    auto next_it = std::find_if(connections_.begin(), connections_.end(), [](auto ptr) {
-                        // find invalid one
-                        return (reinterpret_cast<uintptr_t>(ptr) & ((uintptr_t) 1 << 63)) != 0;
-                    });
-                    if (next_it == connections_.end()) {
-                        std::print("Active indexes all taken up.\n");
-                        delete con;
-                        continue;
-                    }
-                    auto next_idx = std::distance(connections_.begin(), next_it);
-                    // std::cout << "Found connection " << (*next_it) << " that was cleaned up!" << std::endl;
-                    connections_[next_idx] = con;
-
-                    ev.data.u64 = next_idx;
-                    std::thread(std::bind(&server::connection_sentinel, this, std::placeholders::_1), next_idx).detach();
-                }
-                if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_socket, &ev) == -1) {
-                    perror("Failed to add epoll socket");
-                }
-            } else { // Client event
-                if ((event.events & (EPOLLIN | EPOLLHUP | EPOLLERR)) != 0) {
-                    connection *client = reinterpret_cast<connection *>(connections_[event.data.u64]);
-                    if (((uintptr_t)client & ((uintptr_t)1 << 63)) != 0) {
-                        // Event was dispatched for client that has already been deallocated.
-                        continue;
-                    }
-
-                    client = reinterpret_cast<connection*>(((uintptr_t) client) & ((~0ULL) >> 16));
-                    client->take();
-                    client->was_active();
-                    worker_pool.tx()(static_cast<size_t>(event.data.u64));
-                }
+            kana::https_config &config = std::get<kana::https_config>(protocol_config);
+            if (SSL_CTX_use_certificate_file(ctx, config.certificate_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+                ERR_print_errors_fp(stderr);
+                exit(EXIT_FAILURE);
+            }
+            if(SSL_CTX_use_PrivateKey_file(ctx, config.private_key_file.c_str(), SSL_FILETYPE_PEM) <= 0){
+                ERR_print_errors_fp(stderr);
+                exit(EXIT_FAILURE);
             }
         }
+
+
+        if(current->protocol_ == protocol::http || current->protocol_ == protocol::https)
+            current->server_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+        else if (current->protocol_ == protocol::quic)
+            current->server_fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
+
+        int enable = 1;
+        setsockopt(current->server_fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+        setsockopt(current->server_fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int));
+        setsockopt(current->server_fd, SOL_SOCKET, TCP_NODELAY, &enable, sizeof(int));
+
+        std::print("Binding port {}\n", port_);
+        struct sockaddr_in address {
+            .sin_family = AF_INET, .sin_port = ntohs(port_), .sin_addr = {.s_addr = htonl(ip_)},
+            .sin_zero = { 0 }
+        };
+        int result = ::bind(current->server_fd, (struct sockaddr *) &address, sizeof(address));
+        if (result != 0) {
+            perror("Failed to bind socket");
+        }
+        result = listen(current->server_fd, server_config.max_connections);
+        current->connections_.resize(server_config.max_connections, (connection<void> *) ((uintptr_t) 1 << 63));
+
+
+        // Add server socket to epollfd
+        current->epoll_fd = epoll_create1(0);
+        struct epoll_event event;
+        event.events = EPOLLIN;
+        event.data.fd = current->server_fd;
+        epoll_ctl(current->epoll_fd, EPOLL_CTL_ADD, current->server_fd, &event);
+
+        active_threads.emplace_back(std::thread([ctx, &worker_pool, this, current = std::move(current)]() {
+            std::unique_ptr<struct epoll_event[]> events = std::make_unique<struct epoll_event[]>(server_config.max_connections + 1);
+
+            struct sockaddr_storage client_address {};
+            socklen_t               client_address_len = 0;
+
+            std::cout << "Thread for " << serializer<kana::protocol>{}((current->protocol_)) << " is active." << std::endl;
+            std::print("{}: max simultaneous connections: {}\n", serializer<kana::protocol>{}((current->protocol_)), server_config.max_connections);
+            for (;;) {
+                size_t ready = epoll_wait(current->epoll_fd, events.get(), server_config.max_connections + 1, -1);
+                for (size_t i = 0; i < ready; i++) {
+                    struct epoll_event &event = events[i];
+                    if (event.data.fd == current->server_fd) { // Server socket
+                        int client_socket = accept(current->server_fd, (struct sockaddr *)&client_address, &client_address_len);
+                        if (client_socket < 1) {
+                            perror("Failed to accept client");
+                            continue;
+                        }
+                        // setsockopt(client_socket, SOL_SOCKET, TCP_NODELAY, &enable, sizeof(int));
+
+                        struct epoll_event ev;
+                        ev.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLET;
+                        {
+                            auto *con = new connection<tls>(ctx, client_socket, client_address, client_address_len);
+                            auto next_it = std::find_if(current->connections_.begin(), current->connections_.end(), [](auto ptr) {
+                                // find invalid one
+                                return (reinterpret_cast<uintptr_t>(ptr) & ((uintptr_t) 1 << 63)) != 0;
+                            });
+                            if (next_it == current->connections_.end()) {
+                                std::print("Active indexes all taken up.\n");
+                                delete con;
+                                continue;
+                            }
+                            auto next_idx = std::distance(current->connections_.begin(), next_it);
+                            // std::cout << "Found connection " << (*next_it) << " that was cleaned up!" << std::endl;
+                            current->connections_[next_idx] = con;
+
+                            ev.data.u64 = next_idx;
+                            std::thread(std::bind(&server::connection_sentinel, this, std::placeholders::_1, std::placeholders::_2), next_idx, current.get()).detach();
+                        }
+                        if (epoll_ctl(current->epoll_fd, EPOLL_CTL_ADD, client_socket, &ev) == -1) {
+                            perror("Failed to add epoll socket");
+                        }
+                    } else { // Client event
+                        if ((event.events & (EPOLLIN | EPOLLHUP | EPOLLERR)) != 0) {
+                            connection<void> *client = reinterpret_cast<connection<void> *>(current->connections_[event.data.u64]);
+                            if (((uintptr_t)client & ((uintptr_t)1 << 63)) != 0) {
+                                // Event was dispatched for client that has already been deallocated.
+                                continue;
+                            }
+
+                            client = reinterpret_cast<connection<void>*>(((uintptr_t) client) & ((~0ULL) >> 16));
+                            client->take();
+                            client->was_active();
+                            worker_pool.tx()(std::make_tuple<size_t, server_bind_config *>((size_t) event.data.u64, current.get()));
+                        }
+                    }
+                }
+            }
+        }));
     }
+
+    for (auto &th : active_threads) {
+        th.join();
+    }
+    // This should never run.
+    std::print("It ran....\n");
+    for(;;) {}
 }
 
 
@@ -289,11 +338,11 @@ kana::server::start() {
 // times for each.
 void
 // kana::server::connection_sentinel(std::shared_ptr<connection> con) {
-kana::server::connection_sentinel(size_t connection_idx) {
-    connection *con = reinterpret_cast<connection *>(connections_[connection_idx]);
+kana::server::connection_sentinel(size_t connection_idx, server_bind_config *ctx) {
+    connection<void> *con = reinterpret_cast<connection<void> *>(ctx->connections_[connection_idx]);
     // Remove application specific information from the pointer
     uintptr_t mask = (~(0ULL) >> 16);
-    con = reinterpret_cast<connection *>(((uintptr_t) con) & mask);
+    con = reinterpret_cast<connection<void> *>(((uintptr_t) con) & mask);
 
     for (;;) {
         std::unique_lock<std::mutex> lk(con->mutex());
@@ -308,7 +357,8 @@ kana::server::connection_sentinel(size_t connection_idx) {
         if ((con->idle() && con->use_count() <= 0) || con->is_closed())
             break;
     }
-    connections_[connection_idx] = (connection*) ((uintptr_t)con | (((uintptr_t)1) << 63));
+    ctx->connections_[connection_idx] = (connection<void> *) ((uintptr_t)con | (((uintptr_t)1) << 63));
     // std::cerr << "Connection cleaned up: " << connections_[connection_idx] << std::endl;
     delete con;
 }
+

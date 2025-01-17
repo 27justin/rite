@@ -1,0 +1,30 @@
+#+AUTHOR: Justin Andreas Lacoste
+
+* Project Name pending (codename: kana)
+
+<Project-Name> is an experiment by me at writing a highly concurrent,
+scalable HTTP server/(-framework) in C++.
+
+As of now, it supports:
++ High concurrency
++ Request hooks (on_receive, pre_send, post_send, close, etc.)
++ Asynchronous endpoints
++ Thread-pooled endpoints
++ Regex & normal path mapping
++ Extensions
++ High performance (2025-01-07, Avg. 242,828/req per second on 10
+  worker threads with a simple echo endpoint)
++ HTTP/1.0, /1.1 and /2 with SNI
++ Modifiable during runtime
+
+I'm making no guarantees on it's reliability.  It should be somewhat
+safe to use, but when load-testing the server, data-races may occur
+due to the connection management.
+
+* Extensions
+
+** Name Pending (codename: odin)
+
+Pluggable monitoring backend
+*** Screenshots
+

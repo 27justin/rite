@@ -21,7 +21,21 @@
 #include "protocol.hpp"
 #include <atomic>
 
+using socket_fd = int;
+struct server_bind_config {
+    socket_fd server_fd;
+    socket_fd epoll_fd;
+    std::vector<connection<void> *> connections_;
+    std::thread *accept_;
+    kana::protocol protocol_;
+};
 namespace kana {
+
+struct http_config {};
+struct https_config {
+    std::string private_key_file;
+    std::string certificate_file;
+};
 
 class server {
     public:
@@ -38,19 +52,12 @@ class server {
     std::list<std::unique_ptr<kana::controller>>             controllers_;
     std::list<std::unique_ptr<kana::extension>>              extensions_;
 
-    std::vector<connection*> connections_;
-    mutable std::mutex                            connection_mtx_;
-
     struct {
-        std::vector<std::tuple<in_addr_t, uint16_t, kana::protocol>> bind;
+        std::vector<std::tuple<in_addr_t, uint16_t, std::variant<kana::http_config, kana::https_config>>> bind;
         size_t                                                       worker_threads = 8;
         size_t                                                       max_connections = 24;
         size_t                                                       worker_buffer_size = 32768;
     } server_config;
-
-    // Usage:
-    // Each connection gets allocated on the heap and then the pointer to it gets inserted here
-    std::vector<connection **> connection_map_;
 
     std::map<event, std::list<event_callback_type>> events_;
     // std::list<std::unique_ptr<kana::filter>>             filters_;
@@ -80,10 +87,10 @@ class server {
     void finish_http_request(http_request &request, http_response &response);
 
     // void connection_sentinel(std::shared_ptr<connection> con);
-    void connection_sentinel(size_t);
+    void connection_sentinel(size_t, server_bind_config *);
 
     public:
-    server(){}
+    server() {}
 
     void event(enum event event, event_callback_type &&callback) { events_[event].push_front(callback); }
     template<class T, typename... Args>

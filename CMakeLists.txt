@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(kana CXX)
 
-file(GLOB kana_SOURCES src/*.cpp src/http/*.cpp)
+file(GLOB kana_SOURCES src/*.cpp src/http/*.cpp src/protocols/h2/*.cpp)
 
 add_library(kana STATIC ${kana_SOURCES})
 target_compile_options(kana PUBLIC "-std=c++23" "-g3")
@@ -12,6 +12,11 @@ target_include_directories(kana PUBLIC include)
 set(JT_BUILD_EXAMPLES OFF)
 add_subdirectory(third_party/jt)
 target_link_libraries(kana PUBLIC jt)
+
+
+# Link OpenSSL
+target_link_libraries(kana PUBLIC "ssl" "crypto")
+
 
 # Include modules
 

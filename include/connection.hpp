@@ -3,7 +3,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <limits>
+#include <utility>
 #include <mutex>
 #include <print>
 #include <sys/epoll.h>
@@ -12,7 +12,12 @@
 using namespace std::chrono;
 
 using sockfd = int;
+template<typename T>
 class connection {
+    public:
+    using native_handle = int;
+
+    protected:
     sockfd                   socket_;
     struct sockaddr_storage  address_;
     size_t                   address_len_;
@@ -26,30 +31,39 @@ class connection {
     mutable std::mutex lock_;
 
     public:
-    connection(sockfd socket, sockfd epoll_set, struct sockaddr_storage address, size_t addr_len)
+    // Refer to docs/connection.org for an explanation
+    static connection<T> *invalid;
+
+    connection(sockfd socket, struct sockaddr_storage address, size_t addr_len)
       : socket_(socket)
       , address_(address)
       , address_len_(addr_len)
-      , epoll_set_(epoll_set)
       , last_active_(steady_clock::now())
       , keep_alive_(seconds(5))
       , refs_(0)
       , closed_(false)
       , lock_() {}
 
-    ~connection() {
-        ::close(socket_);
-        // NOTE: The following peace of code is deadly.  When firing
-        // at the server with very high RPS, I frequently encountered
-        // an issue, where the server would crash with various
-        // syptoms.  sometimes it was a SEGFAULT, other times a
-        // malloc(): unsorted double linked list corrupted From my
-        // research, calling close() on a socket also automatically
-        // removes it from all active epoll sets, so this should be
-        // safe from memory leaks.
-        //
-        epoll_ctl(epoll_set_, EPOLL_CTL_DEL, socket_, nullptr);
-    }
+    // IMPORTANT:
+    // This move constructor should only ever be called BEFORE
+    // the connection is fully estabilished and part of a `server<T>`.
+    // If the move constructor is ever called /after/ ~on_accept~,
+    // this may very well lead to UB.
+    connection(connection<void> &&other)
+      : socket_(std::exchange(other.socket_, -1))
+      , address_(other.address_)
+      , address_len_(other.address_len_)
+      , last_active_(other.last_active_)
+      , keep_alive_(other.keep_alive_)
+      , refs_(other.refs_.load())
+      , closed_(other.closed_.load())
+      , lock_() {}
+
+    virtual ~connection() {
+        std::print("Closing socket {}\n", socket_);
+        if(socket_ != -1)
+            ::close(socket_);
+    };
 
     sockfd socket() { return socket_; }
 
@@ -97,18 +111,26 @@ class connection {
     uintmax_t                use_count() const { return refs_.load(); }
 
     std::lock_guard<std::mutex> lock() { return std::lock_guard<std::mutex>(lock_); }
+
+    virtual ssize_t write(std::span<const std::byte> what, int flags) = 0;
+    virtual ssize_t read(std::span<std::byte> target, int flags) = 0;
 };
 
-struct connection_state_comparator {
+// TODO: I'd like this to be `constexpr static` and inline defined, but `reinterpret_cast` is not `constexpr`
+// such that inline I'd (apparently only have the option of uintptr_t, but I'd like to avoid casting it to connection<> when using connection<T>::invalid)
+template<typename T>
+connection<T> *connection<T>::invalid = reinterpret_cast<connection<T>*>((uintptr_t) 0x8000000000000000);
 
-    bool operator()(const connection **left, const connection **right) {
-        // Active connections have the MSB of the pointer set to one, these ones
-        // will thus gravitate to the beginning of the std::set.
-        // Stale pointers will be updated to be zeroed out on the MSBs, these ones can be
-        // safely reused.
-        // Using this, we should be able to perform a binary search for usage space in our std::set, without reallocations.
-        uint16_t msb_left = reinterpret_cast<uintptr_t>(left) & (static_cast<uintptr_t>(std::numeric_limits<uint16_t>::max()) << 48);
-        uint16_t msb_right = reinterpret_cast<uintptr_t>(right) & (static_cast<uintptr_t>(std::numeric_limits<uint16_t>::max()) << 48);
-        return msb_left > msb_right;
-    }
-};
+// struct connection_state_comparator {
+
+//     bool operator()(const connection **left, const connection **right) {
+//         // Active connections have the MSB of the pointer set to one, these ones
+//         // will thus gravitate to the beginning of the std::set.
+//         // Stale pointers will be updated to be zeroed out on the MSBs, these ones can be
+//         // safely reused.
+//         // Using this, we should be able to perform a binary search for usage space in our std::set, without reallocations.
+//         uint16_t msb_left = reinterpret_cast<uintptr_t>(left) & (static_cast<uintptr_t>(std::numeric_limits<uint16_t>::max()) << 48);
+//         uint16_t msb_right = reinterpret_cast<uintptr_t>(right) & (static_cast<uintptr_t>(std::numeric_limits<uint16_t>::max()) << 48);
+//         return msb_left > msb_right;
+//     }
+// };

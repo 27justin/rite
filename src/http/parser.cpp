@@ -8,7 +8,7 @@
 
 bool
 // parser<http_request>::parse(const std::shared_ptr<connection> &conn, std::span<const std::byte> data, http_request &req) {
-parser<http_request>::parse(connection *conn, std::span<const std::byte> data, http_request &req) {
+parser<http_request>::parse(connection<void> *conn, std::span<const std::byte> data, http_request &req) {
     req.client_ = conn;
     std::string        request_string(reinterpret_cast<const char *>(data.data()), data.size());
     std::istringstream request_stream(request_string);
@@ -29,15 +29,13 @@ parser<http_request>::parse(connection *conn, std::span<const std::byte> data, h
         return false;
     }
 
-    std::print("Version: {}\n", version);
-
-    if (version == "1.1") {
+    if (version == "HTTP/1.1") {
         req.version_ = http_version::HTTP_1_1;
-    } else if (version == "2.0") {
+    } else if (version == "HTTP/2.0") {
         req.version_ = http_version::HTTP_2_0;
-    } else if (version == "3.0") {
+    } else if (version == "HTTP/3.0") {
         req.version_ = http_version::HTTP_3_0;
-    } else if (version == "1.0") {
+    } else if (version == "HTTP/1.0") {
         req.version_ = http_version::HTTP_1_0;
     } else {
         return false;

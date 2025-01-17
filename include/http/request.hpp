@@ -31,7 +31,7 @@ struct http_request {
     http_version                         version_;
 
     // std::shared_ptr<connection> client_;
-    connection          *client_;
+    connection<void>          *client_;
     // sockfd          client_;
 
     friend class parser<http_request>;
@@ -40,7 +40,7 @@ struct http_request {
 
     int socket() const { return client_->socket(); }
     // std::shared_ptr<connection> client() { return client_; }
-    connection *client() { return client_; }
+    connection<void> *client() { return client_; }
 
     http_method method() const { return method_; }
 
