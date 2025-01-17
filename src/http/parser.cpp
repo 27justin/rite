@@ -2,9 +2,9 @@
 #include <span>
 #include <sstream>
 
+#include "connection.hpp"
 #include "http/parser.hpp"
 #include "http/request.hpp"
-#include "connection.hpp"
 
 bool
 // parser<http_request>::parse(const std::shared_ptr<connection> &conn, std::span<const std::byte> data, http_request &req) {
@@ -96,7 +96,6 @@ parser<http_request>::parse(connection<void> *conn, std::span<const std::byte> d
     return true;
 }
 
-
 std::optional<query_parameters>
 parser<query_parameters>::parse(std::string_view query_string) {
     if (query_string.find('?') == std::string::npos)
@@ -126,15 +125,14 @@ parser<query_parameters>::parse(std::string_view query_string) {
     return query;
 }
 
-
 std::string
 decode_uri_component(const std::string &encoded) {
     std::string decoded;
     char        ch;
-    size_t         i = 0;
+    size_t      i = 0;
     while (i < encoded.length()) {
         if (encoded[i] == '%') {
-            sscanf(encoded.substr(i + 1, 2).c_str(), "%x", (unsigned int *) &ch);
+            sscanf(encoded.substr(i + 1, 2).c_str(), "%x", (unsigned int *)&ch);
             decoded += ch;
             i += 3; // Skip past the %xx
         } else {

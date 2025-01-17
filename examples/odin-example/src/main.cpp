@@ -4,17 +4,17 @@
 #include <iostream>
 
 #include <arpa/inet.h>
+#include <filesystem>
 #include <regex>
 #include <sys/socket.h>
 #include <thread>
-#include <filesystem>
 
+#include <http/endpoint.hpp>
+#include <http/parser.hpp>
 #include <protocols/http.hpp>
 #include <protocols/https.hpp>
 #include <runtime.hpp>
 #include <server.hpp>
-#include <http/parser.hpp>
-#include <http/endpoint.hpp>
 
 #include <rite/extensions/odin.hpp>
 
@@ -30,42 +30,40 @@ main() {
     rite::runtime *runtime = new rite::runtime();
     runtime->worker_threads(8);
 
-    rite::http::endpoint image = rite::http::endpoint {
-        .method = http_method::GET,
-        .path = rite::http::path("/image/{image_path:.+}"),
-        .handler = [](http_request &request, rite::http::path::result mapping) -> http_response {
-            using path = std::filesystem::path;
-            auto file_path = mapping.get<std::string>("image_path");
-            std::filesystem::path file = path(BASE) / path(STATIC_IMAGES) / *file_path;
+    rite::http::endpoint image = rite::http::endpoint{ .method = http_method::GET,
+                                                       .path = rite::http::path("/image/{image_path:.+}"),
+                                                       .handler = [](http_request &request, rite::http::path::result mapping) -> http_response {
+                                                           using path = std::filesystem::path;
+                                                           auto file_path = mapping.get<std::string>("image_path");
+                                                           std::filesystem::path file = path(BASE) / path(STATIC_IMAGES) / *file_path;
 
-            if(std::filesystem::exists(file)) {
-                http_response response {};
-                response.set_status_code(http_status_code::eOk);
+                                                           if (std::filesystem::exists(file)) {
+                                                               http_response response{};
+                                                               response.set_status_code(http_status_code::eOk);
 
-                request.set_context<std::FILE*>(std::fopen(file.c_str(), "rb"));
-                response.set_header("Content-Type", "image/png");
+                                                               request.set_context<std::FILE *>(std::fopen(file.c_str(), "rb"));
+                                                               response.set_header("Content-Type", "image/png");
 
-                response.event(http_response::event::chunk, [&](http_response &response) {
-                    std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(16384);
+                                                               response.event(http_response::event::chunk, [&](http_response &response) {
+                                                                   std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(16384);
 
-                    auto &fstream = request.context<std::FILE*>().value().get();
-                    auto num = std::fread((void *) buffer.get(), 1, 16384, fstream);
+                                                                   auto &fstream = request.context<std::FILE *>().value().get();
+                                                                   auto  num = std::fread((void *)buffer.get(), 1, 16384, fstream);
 
-                    rite::buffer buf(std::move(buffer), num, num < 16384);
-                    if(num < 16384) {
-                        std::fclose(fstream);
-                    }
-                    response.stream(std::move(buf));
-                });
+                                                                   rite::buffer buf(std::move(buffer), num, num < 16384);
+                                                                   if (num < 16384) {
+                                                                       std::fclose(fstream);
+                                                                   }
+                                                                   response.stream(std::move(buf));
+                                                               });
 
-                return response;
-            }else{
-                std::cerr << "Tried to access file: " << file << std::endl;
-                return http_response(http_status_code::eNotFound, "File could not be found.");
-            }
-        },
-        .asynchronous = true
-    };
+                                                               return response;
+                                                           } else {
+                                                               std::cerr << "Tried to access file: " << file << std::endl;
+                                                               return http_response(http_status_code::eNotFound, "File could not be found.");
+                                                           }
+                                                       },
+                                                       .asynchronous = true };
 
     // clang-format off
     rite::http::endpoint index {
@@ -77,10 +75,7 @@ main() {
 
     std::shared_ptr<rite::http::layer> lyr = std::make_shared<rite::http::layer>();
 
-    lyr->attach<rite::extensions::odin>(rite::extensions::odin_config {
-            .admin_path = "/__server/"
-        });
-
+    lyr->attach<rite::extensions::odin>(rite::extensions::odin_config{ .admin_path = "/__server/" });
 
     lyr->add_endpoint(image);
 

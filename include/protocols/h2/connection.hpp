@@ -1,21 +1,20 @@
 #pragma once
 
-#include <protocols/h2.hpp>
-#include <connection.hpp>
-#include <tls.hpp>
 #include "hpack.hpp"
+#include <connection.hpp>
+#include <protocols/h2.hpp>
+#include <tls.hpp>
 
 #include <http/request.hpp>
 
 namespace h2 {
-    struct parameters {
-        struct {
-            parser<h2::hpack> rx;
-            serializer<h2::hpack> tx;
-        } hpack;
-    };
+struct parameters {
+    struct {
+        parser<h2::hpack>     rx;
+        serializer<h2::hpack> tx;
+    } hpack;
+};
 }
-
 
 template<>
 class connection<h2::protocol> : public connection<tls> {
@@ -34,8 +33,8 @@ class connection<h2::protocol> : public connection<tls> {
     // 31 bits are used, when wrapping around we should return to 2
     // std::atomic<int32_t> next_stream_identifier = 2;
 
-    connection_state                state_;
-    std::optional<h2::frame>        unfinished_frame_;
+    connection_state         state_;
+    std::optional<h2::frame> unfinished_frame_;
 
     public:
     std::unique_ptr<h2::parameters> parameters_;
@@ -45,7 +44,7 @@ class connection<h2::protocol> : public connection<tls> {
     connection(connection<tls> &&channel)
       : connection<tls>(std::move(channel))
       , state_(CLIENT_PREFACE)
-      , parameters_(std::make_unique<h2::parameters>()){
+      , parameters_(std::make_unique<h2::parameters>()) {
 
       };
 
@@ -54,10 +53,9 @@ class connection<h2::protocol> : public connection<tls> {
     // Terminate the connection with a GOAWAY
     void terminate();
 
-    std::expected<h2::frame, h2::frame_state> read_frame(std::span<std::byte>::iterator &position, std::span<std::byte> data);
+    std::expected<h2::frame, h2::frame_state>                                        read_frame(std::span<std::byte>::iterator &position, std::span<std::byte> data);
     std::expected<std::vector<std::pair<std::string, std::string>>, h2::frame_state> header_frame(const h2::frame &frame);
 
     using connection<tls>::write;
     int write(const h2::frame &frame);
-
 };

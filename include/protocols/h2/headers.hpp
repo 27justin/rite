@@ -1,6 +1,6 @@
 #pragma once
-#include <protocols/h2.hpp>
 #include "http/parser.hpp"
+#include <protocols/h2.hpp>
 
 #include <cstdint>
 template<>
@@ -13,15 +13,14 @@ struct h2::frame::characteristics<h2::frame::type::HEADERS> {
     static bool is_exclusive(const h2::payload<h2::frame::HEADERS> &payload);
 };
 
-
 template<>
 struct h2::payload<h2::frame::HEADERS> {
-public:
+    public:
     using flags = h2::frame::characteristics<h2::frame::HEADERS>;
 
-    uint8_t pad_length; // Optional, only if PADDED
+    uint8_t  pad_length;        // Optional, only if PADDED
     uint32_t stream_dependency; // 1st bit is EXCLUSIVE, only if PRIORITY
-    uint8_t weight; // Optional, only if PRIORITY
+    uint8_t  weight;            // Optional, only if PRIORITY
 
     std::vector<std::byte> data;
 

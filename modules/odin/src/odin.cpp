@@ -1,12 +1,12 @@
 #include <arpa/inet.h>
 #include <chrono>
 #include <future>
-#include <rite/extensions/odin.hpp>
 #include <memory>
 #include <mutex>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <print>
+#include <rite/extensions/odin.hpp>
 #include <sys/socket.h>
 #include <thread>
 
@@ -38,14 +38,14 @@ odin::on_hook(rite::http::layer &server) {
     // server.event(rite::http::layer::event::pre_send, std::bind(&odin::pre_send, this, std::placeholders::_1, std::placeholders::_2));
     // server.event(rite::http::layer::event::post_send, std::bind(&odin::post_send, this, std::placeholders::_1, std::placeholders::_2));
 
-    server.add_endpoint(rite::http::endpoint{ .method = GET, .path = path("/__server/?$"), .handler = std::bind(&odin::index, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
+    server.add_endpoint(
+      rite::http::endpoint{ .method = GET, .path = path("/__server/?$"), .handler = std::bind(&odin::index, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
 
     server.add_endpoint(rite::http::endpoint{ .method = GET, .path = path("/__server/css"), .handler = std::bind(&odin::css, this, std::placeholders::_1, std::placeholders::_2) });
-    server.add_endpoint(
-        rite::http::endpoint{ .method = GET, .path = path("/__server/\\!component/card.*"), .handler = std::bind(&odin::card, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
+    server.add_endpoint(rite::http::endpoint{
+      .method = GET, .path = path("/__server/\\!component/card.*"), .handler = std::bind(&odin::card, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
     server.add_endpoint(rite::http::endpoint{
       .method = GET, .path = path("/__server/\\!component/request-list.*"), .handler = std::bind(&odin::request_list, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
-
 }
 
 void
@@ -155,7 +155,7 @@ body_(const std::string &inner) {
 
 http_response
 odin::index(http_request &request, path::result) {
-    std::string      content;
+    std::string content;
     return http_response(http_status_code::eOk, body_(R"(
 <h1>Admin Panel</h1>
 <div class="flex justify-between">
@@ -247,33 +247,35 @@ odin::card(http_request &request, path::result) {
         if (metric == "P99") {
             if (!percentile)
                 percentile = calculate_percentiles();
-            output_ += render(template_,
-                              {
-                                { "name", "99th Percentile" },
-                                { "value", std::format("{}ms", percentile->p99) },
-                                {"explanation", "The sample size for percentiles is the most recent 32768 requests."}});
+            output_ += render(
+              template_, { { "name", "99th Percentile" }, { "value", std::format("{}ms", percentile->p99) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
         } else if (metric == "P90") {
             if (!percentile)
                 percentile = calculate_percentiles();
-            output_ += render(template_, { { "name", "90th Percentile" }, { "value", std::format("{}ms", percentile->p90) }, {"explanation", "The sample size for percentiles is the most recent 32768 requests."} });
+            output_ += render(
+              template_, { { "name", "90th Percentile" }, { "value", std::format("{}ms", percentile->p90) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
         } else if (metric == "P75") {
             if (!percentile)
                 percentile = calculate_percentiles();
-            output_ += render(template_, { { "name", "75th Percentile" }, { "value", std::format("{}ms", percentile->p75) }, {"explanation", "The sample size for percentiles is the most recent 32768 requests."} });
+            output_ += render(
+              template_, { { "name", "75th Percentile" }, { "value", std::format("{}ms", percentile->p75) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
         } else if (metric == "P50") {
             if (!percentile)
                 percentile = calculate_percentiles();
-            output_ += render(template_, { { "name", "50th Percentile" }, { "value", std::format("{}ms", percentile->p50) }, {"explanation", "The sample size for percentiles is the most recent 32768 requests."} });
+            output_ += render(
+              template_, { { "name", "50th Percentile" }, { "value", std::format("{}ms", percentile->p50) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
         } else if (metric == "RPS") {
-            output_ += render(template_, { { "name", "RPS" }, { "value", std::format("{}", rps_.load()) }, {"explanation", "Requests per second"} });
+            output_ += render(template_, { { "name", "RPS" }, { "value", std::format("{}", rps_.load()) }, { "explanation", "Requests per second" } });
         } else if (metric == "total_served") {
-            output_ += render(template_, { { "name", "Total Requests" }, { "value", std::format("{}", requests_served_.load()) }, {"explanation", "Requests since server start"} });
+            output_ += render(template_, { { "name", "Total Requests" }, { "value", std::format("{}", requests_served_.load()) }, { "explanation", "Requests since server start" } });
         } else if (metric == "2xx") {
-            output_ += render(template_, { { "name", "OK" }, { "value", std::format("{}", status_code_.ok.load()) }, {"explanation", "Responses sent with status code 200-299"}});
+            output_ += render(template_, { { "name", "OK" }, { "value", std::format("{}", status_code_.ok.load()) }, { "explanation", "Responses sent with status code 200-299" } });
         } else if (metric == "4xx") {
-            output_ += render(template_, { { "name", "Client Error" }, { "value", std::format("{}", status_code_.client_error.load()) }, {"explanation", "Responses sent with status code 400-499"} });
+            output_ +=
+              render(template_, { { "name", "Client Error" }, { "value", std::format("{}", status_code_.client_error.load()) }, { "explanation", "Responses sent with status code 400-499" } });
         } else if (metric == "5xx") {
-            output_ += render(template_, { { "name", "Server Error" }, { "value", std::format("{}", status_code_.server_error.load()) }, {"explanation", "Responses sent with status code 500-599"} });
+            output_ +=
+              render(template_, { { "name", "Server Error" }, { "value", std::format("{}", status_code_.server_error.load()) }, { "explanation", "Responses sent with status code 500-599" } });
         }
     }
 

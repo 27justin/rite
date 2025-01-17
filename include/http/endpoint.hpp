@@ -2,11 +2,11 @@
 
 #include <functional>
 #include <future>
+#include <iostream>
 #include <list>
 #include <optional>
 #include <regex>
 #include <variant>
-#include <iostream>
 
 #include "http/method.hpp"
 #include "http/request.hpp"
@@ -14,7 +14,7 @@
 
 namespace rite::http {
 class path {
-public:
+    public:
     struct result {
         std::unordered_map<std::string, std::string> parameters; // Extracted parameters
         // Template method to get a parameter by name
@@ -40,8 +40,8 @@ public:
 
     // Constructor that takes a path string and prepares the regex
     path(const std::string &path_str) {
-        std::string regex_str;
-        std::smatch param_matches;
+        std::string                 regex_str;
+        std::smatch                 param_matches;
         std::string::const_iterator search_start(path_str.cbegin());
 
         // Iterate through the path string to build the regex
@@ -73,10 +73,10 @@ public:
 
     // Method to match a given URL against the regex and extract parameters
     std::optional<result> match(const std::string &url) {
-        std::smatch matches;
+        std::smatch           matches;
         std::optional<result> result;
         if (std::regex_match(url, matches, regex_pattern)) {
-            result = rite::http::path::result {};
+            result = rite::http::path::result{};
             // Extract parameters based on the regex groups
             for (size_t i = 1; i < matches.size(); ++i) {
                 if (i - 1 < parameter_names.size()) {
@@ -86,11 +86,11 @@ public:
         }
         return result;
     }
-private:
-    std::regex regex_pattern; // Compiled regex pattern
+
+    private:
+    std::regex               regex_pattern;   // Compiled regex pattern
     std::vector<std::string> parameter_names; // Names of the parameters
 };
-
 
 struct endpoint {
     public:

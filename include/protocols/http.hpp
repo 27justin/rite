@@ -2,9 +2,9 @@
 #include <iostream>
 #include <memory>
 
+#include "http/behaviour.hpp"
 #include "plain.hpp"
 #include "server.hpp"
-#include "http/behaviour.hpp"
 
 struct http {
     struct client {};
@@ -24,8 +24,9 @@ class rite::server<http> : public rite::server<void> {
 
         friend class rite::server<::http>;
     };
+
     protected:
-    config   config_;
+    config config_;
 
     public:
     server(const config &server_config)

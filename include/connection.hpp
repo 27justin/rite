@@ -3,11 +3,11 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <utility>
 #include <mutex>
 #include <print>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <utility>
 
 using namespace std::chrono;
 
@@ -61,7 +61,7 @@ class connection {
 
     virtual ~connection() {
         // std::print("Closing socket {}\n", socket_);
-        if(socket_ != -1)
+        if (socket_ != -1)
             ::close(socket_);
     };
 
@@ -110,7 +110,7 @@ class connection {
     std::mutex              &mutex() { return lock_; }
     uintmax_t                use_count() const { return refs_.load(); }
 
-    std::lock_guard<std::mutex> lock() { return std::lock_guard<std::mutex>(lock_); }
+    std::lock_guard<std::mutex>  lock() { return std::lock_guard<std::mutex>(lock_); }
     std::unique_lock<std::mutex> unique_lock() { return std::unique_lock<std::mutex>(lock_); }
 
     virtual ssize_t write(std::span<const std::byte> what, int flags) = 0;
@@ -120,4 +120,4 @@ class connection {
 // TODO: I'd like this to be `constexpr static` and inline defined, but `reinterpret_cast` is not `constexpr`
 // such that inline I'd (apparently only have the option of uintptr_t, but I'd like to avoid casting it to connection<> when using connection<T>::invalid)
 template<typename T>
-connection<T> *connection<T>::invalid = reinterpret_cast<connection<T>*>((uintptr_t) 0x8000000000000000);
+connection<T> *connection<T>::invalid = reinterpret_cast<connection<T> *>((uintptr_t)0x8000000000000000);

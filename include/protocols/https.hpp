@@ -1,9 +1,9 @@
 #pragma once
 #include <iostream>
+#include <memory>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <stdexcept>
-#include <memory>
 
 #include "server.hpp"
 #include "tls.hpp"
@@ -12,13 +12,14 @@
 struct https {};
 
 template<typename T>
-struct protocol{};
+struct protocol {};
 
 #pragma GCC diagnostic ignored "-Wunused-function"
-static int alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg) {
+static int
+alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg) {
     // Check the incoming protocols
     const unsigned char *protocol = NULL;
-    unsigned int protocol_len = 0;
+    unsigned int         protocol_len = 0;
 
     // Iterate through the provided protocols
     while (inlen > 0) {
@@ -32,20 +33,20 @@ static int alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *ou
         // Check if the protocol is "h2"
         if (len == 2 && memcmp(in + 1, "h2", 2) == 0) {
             // Found the HTTP/2 protocol
-            protocol = in + 1; // Point to the protocol name
+            protocol = in + 1;  // Point to the protocol name
             protocol_len = len; // Set the length
             break;
         }
 
         // Move to the next protocol
-        in += len + 1; // Move past the length byte and the protocol name
+        in += len + 1;    // Move past the length byte and the protocol name
         inlen -= len + 1; // Decrease the remaining length
     }
 
     if (protocol) {
         // Set the output parameters to indicate the selected protocol
-        *out = protocol; // Set the output to the selected protocol
-        *outlen = protocol_len; // Set the length of the selected protocol
+        *out = protocol;          // Set the output to the selected protocol
+        *outlen = protocol_len;   // Set the length of the selected protocol
         return SSL_TLSEXT_ERR_OK; // Indicate success
     }
 
@@ -57,8 +58,8 @@ template<>
 class rite::server<https> : public rite::server<void> {
     public:
     struct config : public rite::server<void>::config {
-        std::string private_key_file_;
-        std::string certificate_file_;
+        std::string                        private_key_file_;
+        std::string                        certificate_file_;
         std::shared_ptr<rite::http::layer> behaviour_;
 
         public:

@@ -38,7 +38,7 @@ void
 rite::server<https>::on_read(connection<void> *socket) {
     static thread_local std::unique_ptr<std::byte[]> buffer = std::make_unique<std::byte[]>(16384);
     auto                                             lock = socket->lock();
-    ssize_t bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
+    ssize_t                                          bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
     if (bytes < 1) {
         std::print("Connection died.\n");
         socket->release();

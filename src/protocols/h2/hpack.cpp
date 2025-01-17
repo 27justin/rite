@@ -62,8 +62,8 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
                 value = parse_string(pos, payload);
 
                 // std::print("Indexed '{}'\n", key);
-                decoded_.push_back(h2::hpack::header { key, value });
-                header_map_.push_front(h2::hpack::header { key, value });
+                decoded_.push_back(h2::hpack::header{ key, value });
+                header_map_.push_front(h2::hpack::header{ key, value });
                 goto next;
             }
 
@@ -102,13 +102,13 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
                 // std::print("Emitting '{}'\n", key);
                 value = parse_string(pos, payload);
                 // header_map_.push_front(h2::hpack::header { key, value });
-                decoded_.push_back(h2::hpack::header { key, value });
+                decoded_.push_back(h2::hpack::header{ key, value });
             }
-          next:
+        next:
             // auto sub = pos;
             // std::print("=> ");
             // for (; begin != sub; ++begin) {
-                // std::print("\\x{:02x}", static_cast<uint8_t>(*begin));
+            // std::print("\\x{:02x}", static_cast<uint8_t>(*begin));
             // }
             // std::print("\n----------------\n");
 
@@ -143,7 +143,6 @@ parser<h2::hpack>::parse_string(std::span<std::byte>::const_iterator &pos, std::
     auto    length = h2::variable_integer<7>::decode(std::span<const std::byte>(pos, payload.cend()), len);
     // Skip the `Value Length`
     pos += len;
-
 
     // Read `length` bytes as the string starting from `pos`
     std::string raw((const char *)&(*pos), length);
@@ -186,15 +185,15 @@ std::variant<serializer<h2::hpack>::fully_indexed, serializer<h2::hpack>::key_in
 serializer<h2::hpack>::search_index(const h2::hpack::header &h) {
     // Look through our static table
     std::string key = to_lower(h.key);
-    ssize_t best_index = -1;
+    ssize_t     best_index = -1;
     for (auto const &[idx, header] : h2::hpack::STATIC_HEADER_TABLE) {
-        if (header.key == key && header.value == h.value){
+        if (header.key == key && header.value == h.value) {
             return fully_indexed{ idx };
-        }else if (header.key == key && header.value != h.value){
+        } else if (header.key == key && header.value != h.value) {
             best_index = idx;
         }
     }
-    if(best_index != -1)
+    if (best_index != -1)
         return key_indexed{ best_index };
     else
         return literal{};
@@ -214,7 +213,7 @@ serializer<h2::hpack>::serialize(std::span<const h2::hpack::header> list) {
             fully_indexed &index = std::get<fully_indexed>(where);
 
             // Convert index to wire format
-            auto wire = h2::variable_integer<7>::encode( index.index );
+            auto wire = h2::variable_integer<7>::encode(index.index);
             wire[0] |= static_cast<std::byte>(0b1000'0000);
             payload.insert(payload.end(), wire.begin(), wire.end());
         }
@@ -248,18 +247,17 @@ serializer<h2::hpack>::serialize(std::span<const h2::hpack::header> list) {
             payload.insert(payload.end(), huffman.begin(), huffman.end());
         }
 
-
         if (std::holds_alternative<literal>(where)) {
             // Emit 1 byte header
             std::print("Inserting literal header ({}: {})\n", header.key, header.value);
-            std::vector<std::byte> wire = {static_cast<std::byte>(0b0000'0000)};
+            std::vector<std::byte> wire = { static_cast<std::byte>(0b0000'0000) };
             payload.insert(payload.end(), wire.begin(), wire.end());
 
             // Encode key
             auto huffman = h2::hpack::decoder().encode(header.key);
 
             // Insert key length
-            wire = h2::variable_integer<7>::encode( huffman.size() );
+            wire = h2::variable_integer<7>::encode(huffman.size());
             // Huffman encoding bitflag
             wire[0] |= static_cast<std::byte>(0b1000'0000);
             payload.insert(payload.end(), wire.begin(), wire.end());
@@ -269,7 +267,7 @@ serializer<h2::hpack>::serialize(std::span<const h2::hpack::header> list) {
 
             huffman = h2::hpack::decoder().encode(header.value);
             // Insert value length
-            wire = h2::variable_integer<7>::encode( huffman.size() );
+            wire = h2::variable_integer<7>::encode(huffman.size());
             // Huffman encoding bitflag
             wire[0] |= static_cast<std::byte>(0b1000'0000);
             payload.insert(payload.end(), wire.begin(), wire.end());
@@ -291,7 +289,6 @@ serializer<h2::hpack>::finish(uint32_t stream_id) {
     };
     // clang-format on
 }
-
 
 // clang-format off
 std::unordered_map<ssize_t, h2::hpack::header>

@@ -1,16 +1,16 @@
-#include <runtime.hpp>
 #include <iostream>
+#include <runtime.hpp>
 
 void
 rite::runtime::start() {
-    if(num_workers_ == 0) {
+    if (num_workers_ == 0) {
         std::cerr << "Runtime: starting with 0 threads configured, are you sure this is intended?" << std::endl;
     }
 
     auto &consumer = thread_pool_.rx();
     for (size_t i = 0; i < num_workers_; ++i) {
         threads_.push_back(std::thread([&consumer]() {
-            for(;;) {
+            for (;;) {
                 auto task = consumer.wait();
                 task();
             }
@@ -20,7 +20,8 @@ rite::runtime::start() {
         thread.join();
     }
     // TODO: Can this actually happen? Would be bad for us.
-    for(;;);
+    for (;;)
+        ;
 }
 
 void
@@ -33,4 +34,3 @@ void
 rite::runtime::dispatch(std::function<void()> &&work) {
     thread_pool_.tx()(std::move(work));
 }
-

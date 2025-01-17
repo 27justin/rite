@@ -71,7 +71,7 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
 
 std::optional<http_request>
 connection<h2::protocol>::process(std::span<std::byte> span) {
-    auto pos = span.begin();
+    auto                        pos = span.begin();
     std::optional<http_request> rval = std::nullopt;
 start:
     switch (state_) {
@@ -150,109 +150,105 @@ start:
             }
 
             switch (frame->type) {
-            case h2::frame::type::SETTINGS: {
-                // Client likely acknowledged our settings.
-                // The HTTP specification says that the ACK should happen, but not in a specific order
-                // thus we handle it as though optional.
-                if ((frame->flags & h2::frame::characteristics<h2::frame::SETTINGS>::ACK) == 1) {
-                    std::print("H2[process]: Client acknowledged settings\n");
-                }
-                break;
-            }
-            case h2::frame::type::PING: {
-                // Send PING+ACK
-                h2::frame ack {
-                    .length = 8, // PING mandates 8 bytes of opaque
-                                 // data
-                    .type = h2::frame::type::PING,
-                    .flags = h2::frame::characteristics<h2::frame::type::PING>::ACK,
-                    .stream_identifier = frame->stream_identifier,
-                    .data = std::vector<std::byte>(8)
-                };
-                write(ack);
-                break;
-            }
-            case h2::frame::type::WINDOW_UPDATE: {
-                // Flow control:
-                // TODO: We do not support flow control /yet/. I may add this in the future
-                break;
-            }
-            case h2::frame::type::CONTINUATION:
-                __attribute__((fallthrough));
-            case h2::frame::type::HEADERS: {
-                // Automatically provisions the steam ID for us,
-                streams_[frame->stream_identifier]
-                    .state = h2::stream::open;
-
-                auto result = parameters_->hpack.rx.parse(*frame);
-                switch (result) {
-                case h2::hpack::error::eUnknownHeader: {
-                    // TODO: throw decoding error and (probably) terminate the connection
+                case h2::frame::type::SETTINGS: {
+                    // Client likely acknowledged our settings.
+                    // The HTTP specification says that the ACK should happen, but not in a specific order
+                    // thus we handle it as though optional.
+                    if ((frame->flags & h2::frame::characteristics<h2::frame::SETTINGS>::ACK) == 1) {
+                        std::print("H2[process]: Client acknowledged settings\n");
+                    }
                     break;
                 }
-                case h2::hpack::error::eSizeUpdate: {
-                    // This warrants an ACK to the client
-                    write(h2::frame{ .length = 0, .type = h2::frame::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .data = {} });
+                case h2::frame::type::PING: {
+                    // Send PING+ACK
+                    h2::frame ack{ .length = 8, // PING mandates 8 bytes of opaque
+                                                // data
+                                   .type = h2::frame::type::PING,
+                                   .flags = h2::frame::characteristics<h2::frame::type::PING>::ACK,
+                                   .stream_identifier = frame->stream_identifier,
+                                   .data = std::vector<std::byte>(8) };
+                    write(ack);
+                    break;
+                }
+                case h2::frame::type::WINDOW_UPDATE: {
+                    // Flow control:
+                    // TODO: We do not support flow control /yet/. I may add this in the future
+                    break;
+                }
+                case h2::frame::type::CONTINUATION:
                     __attribute__((fallthrough));
-                }
-                case h2::hpack::error::eMore: {
-                    std::print("H2[process]: HPACK is missing data (no END_HEADERS bit set), waiting for more CONTINUATION or HEADERS frames.\n");
+                case h2::frame::type::HEADERS: {
+                    // Automatically provisions the steam ID for us,
+                    streams_[frame->stream_identifier].state = h2::stream::open;
+
+                    auto result = parameters_->hpack.rx.parse(*frame);
+                    switch (result) {
+                        case h2::hpack::error::eUnknownHeader: {
+                            // TODO: throw decoding error and (probably) terminate the connection
+                            break;
+                        }
+                        case h2::hpack::error::eSizeUpdate: {
+                            // This warrants an ACK to the client
+                            write(h2::frame{ .length = 0, .type = h2::frame::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .data = {} });
+                            __attribute__((fallthrough));
+                        }
+                        case h2::hpack::error::eMore: {
+                            std::print("H2[process]: HPACK is missing data (no END_HEADERS bit set), waiting for more CONTINUATION or HEADERS frames.\n");
+                            break;
+                        }
+                        case h2::hpack::error::eDone: {
+                            // Transition stream to half-closed (remote won't
+                            // send any more data.)
+                            streams_[frame->stream_identifier].state = h2::stream::half_closed;
+
+                            // Print out the headers
+                            auto headers = parameters_->hpack.rx.result();
+                            auto get_header = [&headers](std::string key) {
+                                return std::find_if(headers.cbegin(), headers.cend(), [&key](const h2::hpack::header &h) { return h.key == key; });
+                            };
+
+                            rval = http_request();
+                            rval->path_ = (*get_header(":path")).value;
+
+                            // Set the method
+                            auto method_str = (*get_header(":method")).value;
+                            if (method_str == "GET") {
+                                rval->method_ = http_method::GET;
+                            } else if (method_str == "HEAD") {
+                                rval->method_ = http_method::HEAD;
+                            } else if (method_str == "POST") {
+                                rval->method_ = http_method::POST;
+                            } else if (method_str == "PUT") {
+                                rval->method_ = http_method::PUT;
+                            } else if (method_str == "DELETE") {
+                                rval->method_ = http_method::DELETE;
+                            } else if (method_str == "CONNECT") {
+                                rval->method_ = http_method::CONNECT;
+                            } else if (method_str == "OPTIONS") {
+                                rval->method_ = http_method::OPTIONS;
+                            } else if (method_str == "TRACE") {
+                                rval->method_ = http_method::TRACE;
+                            } else if (method_str == "PATCH") {
+                                rval->method_ = http_method::PATCH;
+                            }
+
+                            for (auto const &header : headers) {
+                                rval->headers_[header.key] = header.value;
+                            }
+                            rval->version_ = http_version::HTTP_2_0;
+
+                            if (rval->path_.find('?') != std::string::npos) {
+                                query_parameters query = parser<query_parameters>{}.parse(rval->path_).value();
+                                rval->query_ = query;
+                            }
+
+                            rval->set_context<h2::stream_id>(uint32_t(frame->stream_identifier));
+                            rval->client_ = this;
+                            break;
+                        }
+                    }
                     break;
                 }
-                case h2::hpack::error::eDone: {
-                    // Transition stream to half-closed (remote won't
-                    // send any more data.)
-                    streams_[frame->stream_identifier]
-                        .state = h2::stream::half_closed;
-
-                    // Print out the headers
-                    auto headers = parameters_->hpack.rx.result();
-                    auto get_header = [&headers](std::string key){
-                        return std::find_if(headers.cbegin(), headers.cend(), [&key](const h2::hpack::header &h){ return h.key == key; });
-                    };
-
-                    rval = http_request();
-                    rval->path_ = (*get_header(":path")).value;
-
-                    // Set the method
-                    auto method_str = (*get_header(":method")).value;
-                    if (method_str == "GET") {
-                        rval->method_ = http_method::GET;
-                    } else if (method_str == "HEAD") {
-                        rval->method_ = http_method::HEAD;
-                    } else if (method_str == "POST") {
-                        rval->method_ = http_method::POST;
-                    } else if (method_str == "PUT") {
-                        rval->method_ = http_method::PUT;
-                    } else if (method_str == "DELETE") {
-                        rval->method_ = http_method::DELETE;
-                    } else if (method_str == "CONNECT") {
-                        rval->method_ = http_method::CONNECT;
-                    } else if (method_str == "OPTIONS") {
-                        rval->method_ = http_method::OPTIONS;
-                    } else if (method_str == "TRACE") {
-                        rval->method_ = http_method::TRACE;
-                    } else if (method_str == "PATCH") {
-                        rval->method_ = http_method::PATCH;
-                    }
-
-                    for (auto const &header : headers) {
-                        rval->headers_[header.key] = header.value;
-                    }
-                    rval->version_ = http_version::HTTP_2_0;
-
-                    if (rval->path_.find('?') != std::string::npos) {
-                        query_parameters query = parser<query_parameters>{}.parse(rval->path_).value();
-                        rval->query_ = query;
-                    }
-
-                    rval->set_context<h2::stream_id>(uint32_t(frame->stream_identifier));
-                    rval->client_ = this;
-                    break;
-                }
-                }
-                break;
-            }
                 case h2::frame::type::DATA: {
                     __attribute__((fallthrough));
                 }

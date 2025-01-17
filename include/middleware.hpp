@@ -7,9 +7,8 @@
 
 namespace rite {
 class middleware {
-public:
+    public:
     virtual ~middleware() = default;
     virtual std::optional<http_response> run(http_request &request) = 0;
 };
 }
-

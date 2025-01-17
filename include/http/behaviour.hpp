@@ -17,7 +17,7 @@ namespace rite::http {
 
 class layer;
 class extension {
-public:
+    public:
     virtual void on_request(http_request &) = 0;
     virtual void pre_send(http_request &, http_response &) = 0;
     virtual void post_send(http_request &, http_response &) = 0;
@@ -32,20 +32,20 @@ class layer {
         endpoints_.emplace_back(endpoint);
     }
 
-    std::pair<endpoint*, rite::http::path::result> find_endpoint(const http_request &request) {
+    std::pair<endpoint *, rite::http::path::result> find_endpoint(const http_request &request) {
         for (auto &endpoint : endpoints_) {
             rite::http::path path = endpoint.path;
             auto             result = path.match(std::string(request.path()));
             if (result) {
-                return std::make_pair<rite::http::endpoint*, rite::http::path::result>(&endpoint, std::move(result.value()));
+                return std::make_pair<rite::http::endpoint *, rite::http::path::result>(&endpoint, std::move(result.value()));
             }
         }
         throw error::eNoEndpoint;
     }
 
-    template<typename T, typename ...Args>
+    template<typename T, typename... Args>
         requires std::derived_from<T, extension>
-    void attach(Args ...arguments) {
+    void attach(Args... arguments) {
         extensions_.emplace_back(std::make_unique<T>(std::forward<Args>(arguments)...));
         extensions_.back()->on_hook(*this);
     }
@@ -58,7 +58,7 @@ class layer {
     /// serialization that can't be generically represented without
     /// blocking the worker thread.
     void handle(http_request &req, std::function<void(http_response &&)> &&finish) {
-        rite::http::endpoint *endpoint = nullptr;
+        rite::http::endpoint    *endpoint = nullptr;
         rite::http::path::result mapping;
         std::tie(endpoint, mapping) = find_endpoint(req);
 
@@ -82,9 +82,7 @@ class layer {
             });
 
             if (endpoint->thread_pool) {
-                endpoint->thread_pool.value().dispatch([&handler]() mutable {
-                    handler.get();
-                });
+                endpoint->thread_pool.value().dispatch([&handler]() mutable { handler.get(); });
             } else {
                 // Run on this thread
                 if (policy == std::launch::deferred)
@@ -112,7 +110,7 @@ class layer {
     }
 
     private:
-    std::vector<rite::http::endpoint> endpoints_;
+    std::vector<rite::http::endpoint>       endpoints_;
     std::vector<std::unique_ptr<extension>> extensions_;
 };
 

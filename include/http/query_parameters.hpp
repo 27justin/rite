@@ -10,7 +10,6 @@
 template<typename T>
 class parser;
 
-
 template<typename T>
 struct pluggable;
 
@@ -31,12 +30,11 @@ class query_parameters {
 
     public:
     template<typename T>
-    std::enable_if_t<std::is_same_v<T, typename pluggable<T>::value_type>, std::optional<T>>
-    get(const std::string_view &key) const {
+    std::enable_if_t<std::is_same_v<T, typename pluggable<T>::value_type>, std::optional<T>> get(const std::string_view &key) const {
         for (const auto &[pkey, value] : parameters_) {
             if (key == pkey) {
                 std::stringstream ss(value);
-                T val;
+                T                 val;
                 ss >> val;
                 return val;
             }
@@ -46,12 +44,11 @@ class query_parameters {
 
     // Return the first parameter named `key` for array types
     template<typename T>
-    std::enable_if_t<std::is_same_v<T, std::vector<typename T::value_type>>, std::optional<T>>
-    get(const std::string_view &key) const {
+    std::enable_if_t<std::is_same_v<T, std::vector<typename T::value_type>>, std::optional<T>> get(const std::string_view &key) const {
         std::vector<typename T::value_type> arr;
         for (const auto &[pkey, value] : parameters_) {
             if (key == pkey) {
-                std::stringstream ss(value);
+                std::stringstream      ss(value);
                 typename T::value_type val;
                 ss >> val;
                 arr.emplace_back(std::move(val));

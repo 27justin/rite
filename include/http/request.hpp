@@ -31,13 +31,12 @@ struct http_request {
     http_version                         version_;
 
     // std::shared_ptr<connection> client_;
-    connection<void>          *client_;
+    connection<void> *client_;
     // sockfd          client_;
 
     friend class parser<http_request>;
 
     public:
-
     int socket() const { return client_->socket(); }
     // std::shared_ptr<connection> client() { return client_; }
     connection<void> *client() { return client_; }
@@ -48,7 +47,7 @@ struct http_request {
     const header_map &headers() const { return headers_; }
 
     template<typename T>
-    void set_context(T&& value) {
+    void set_context(T &&value) {
         // Use std::decay to remove references and cv-qualifiers
         using ValueType = typename std::decay<T>::type;
 

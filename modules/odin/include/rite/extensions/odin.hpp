@@ -26,10 +26,10 @@
 #include <sys/socket.h>
 
 #include <http/behaviour.hpp>
+#include <http/query_parameters.hpp>
 #include <http/request.hpp>
 #include <http/response.hpp>
 #include <http/version.hpp>
-#include <http/query_parameters.hpp>
 
 // Admin UI
 // TODO: Gosh, write better introductions...
@@ -54,13 +54,13 @@ struct odin_admin_user {};
 
 // // HTTP request for introspection, only saving fields that are of importance to us
 struct odin_http_request {
-    std::string                           path;
-    query_parameters                      query;
-    struct sockaddr_storage               ip;
-    size_t                                ip_len;
-    http_method                           method;
-    size_t                                request_body_len;
-    http_version                          version;
+    std::string             path;
+    query_parameters        query;
+    struct sockaddr_storage ip;
+    size_t                  ip_len;
+    http_method             method;
+    size_t                  request_body_len;
+    http_version            version;
     // rite::protocol                        protocol;
     std::chrono::steady_clock::time_point time;
     long int                              processing_time; // us (microseconds)
@@ -105,7 +105,6 @@ class odin : public rite::http::extension {
 
     void             calculate_rps();
     odin_percentiles calculate_percentiles();
-
 
     http_response index(http_request &request, rite::http::path::result);
     http_response css(http_request &request, rite::http::path::result);

@@ -138,12 +138,15 @@ struct serializer<h2::hpack> {
     public:
     serializer() = default;
 
-    struct fully_indexed { ssize_t index; };
-    struct key_indexed { ssize_t index; };
+    struct fully_indexed {
+        ssize_t index;
+    };
+    struct key_indexed {
+        ssize_t index;
+    };
     struct literal {};
 
-    std::variant < fully_indexed, key_indexed,
-                   literal > search_index(const h2::hpack::header &h);
+    std::variant<fully_indexed, key_indexed, literal> search_index(const h2::hpack::header &h);
 
     // NOTE: This function is fairly stupid and does not particularly
     // make use of the header compression HPACK offers, ideally we'd
@@ -152,6 +155,5 @@ struct serializer<h2::hpack> {
     // generally without indexing except for the static table.
     void serialize(std::span<const h2::hpack::header>);
 
-    h2::frame
-    finish(uint32_t);
+    h2::frame finish(uint32_t);
 };

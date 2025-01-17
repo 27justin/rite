@@ -1,6 +1,6 @@
+#include <cassert>
 #include <netinet/in.h>
 #include <protocols/h2/headers.hpp>
-#include <cassert>
 #include <stdexcept>
 
 h2::payload<h2::frame::HEADERS>::payload(const h2::frame &frame)
@@ -61,5 +61,5 @@ h2::payload<h2::frame::HEADERS>::payload(const h2::frame &frame)
 
 bool
 h2::frame::characteristics<h2::frame::type::HEADERS>::is_exclusive(const h2::payload<h2::frame::HEADERS> &payload) {
-    return payload.stream_dependency & ((uint32_t) 1 << 31);
+    return payload.stream_dependency & ((uint32_t)1 << 31);
 }

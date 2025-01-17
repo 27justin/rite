@@ -1,7 +1,6 @@
 #include "protocols/h2/huffman.hpp"
 #include "protocols/h2/hpack.hpp"
 
-
 huffman &
 h2::hpack::decoder() {
     static huffman::encoding_map HPACK_ENCODING = {
