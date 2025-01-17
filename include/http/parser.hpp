@@ -18,7 +18,8 @@ struct connection;
 template<>
 struct parser<http_request> {
 public:
-    bool parse(const std::shared_ptr<connection> &connection, std::span<const std::byte> data, http_request &req);
+// bool parse(const std::shared_ptr<connection> &connection, std::span<const std::byte> data, http_request &req);
+    bool parse(connection *connection, std::span<const std::byte> data, http_request &req);
 };
 
 // Specialization for query_parameters

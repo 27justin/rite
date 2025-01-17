@@ -10,7 +10,6 @@
 #include <string_view>
 #include <type_traits>
 #include <variant>
-#include <map>
 
 #include "connection.hpp"
 #include "controller.hpp"
@@ -20,36 +19,34 @@
 #include "http/response.hpp"
 #include "middleware.hpp"
 #include "protocol.hpp"
+#include <atomic>
 
 namespace kana {
 
 class server {
-public:
-enum class event {
-    on_request, // On request, before any path-mapping takes place
-    pre_send,   // After handler & middlewares ran, but before headers are flushed
-    post_send,  // After flushing headers & body
-};
+    public:
+    enum class event {
+        on_request, // On request, before any path-mapping takes place
+        pre_send,   // After handler & middlewares ran, but before headers are flushed
+        post_send,  // After flushing headers & body
+    };
     //clang-format off
-using event_callback_type = std::variant<
-    std::function<void(http_request &)>,
-    std::function<void(http_request &, http_response&)>
->;
+    using event_callback_type = std::variant<std::function<void(http_request &)>, std::function<void(http_request &, http_response &)>>;
     //clang-format on
-private:
+    private:
     std::map<std::string, std::unique_ptr<kana::middleware>> middlewares_;
-    std::list<std::unique_ptr<kana::controller>>         controllers_;
-    std::list<std::unique_ptr<kana::extension>>          extensions_;
+    std::list<std::unique_ptr<kana::controller>>             controllers_;
+    std::list<std::unique_ptr<kana::extension>>              extensions_;
 
-    std::map<sockfd, std::shared_ptr<connection>> connections_;
-    mutable std::mutex connection_mtx_;
+    std::vector<std::atomic<uintptr_t>> connections_;
+    mutable std::mutex                            connection_mtx_;
+
     struct {
         std::vector<std::tuple<in_addr_t, uint16_t, kana::protocol>> bind;
         size_t                                                       worker_threads = 8;
         size_t                                                       max_connections = 24;
         size_t                                                       worker_buffer_size = 32768;
     } server_config;
-
 
     // Usage:
     // Each connection gets allocated on the heap and then the pointer to it gets inserted here
@@ -66,7 +63,7 @@ private:
     void trigger(event evt, http_request &req) {
         auto &list = events_[evt];
         for (auto const &callback : list) {
-            auto lambda = std::get<std::function<void(http_request&)>>(callback);
+            auto lambda = std::get<std::function<void(http_request &)>>(callback);
             lambda(req);
         }
     }
@@ -75,19 +72,20 @@ private:
     void trigger(event evt, http_request &req, http_response &response) {
         auto &list = events_[evt];
         for (auto const &callback : list) {
-            auto lambda = std::get<std::function<void(http_request&, http_response&)>>(callback);
+            auto lambda = std::get<std::function<void(http_request &, http_response &)>>(callback);
             lambda(req, response);
         }
     }
 
     void finish_http_request(http_request &request, http_response &response);
 
-    void connection_sentinel(std::shared_ptr<connection> con);
+    // void connection_sentinel(std::shared_ptr<connection> con);
+    void connection_sentinel(size_t);
 
     public:
-    void event(enum event event, event_callback_type &&callback) {
-        events_[event].push_front(callback);
-    }
+    server(){}
+
+    void event(enum event event, event_callback_type &&callback) { events_[event].push_front(callback); }
     template<class T, typename... Args>
         requires std::derived_from<T, kana::middleware>
     server &register_middleware(Args... args) {

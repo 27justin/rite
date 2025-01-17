@@ -28,14 +28,17 @@ struct http_request {
     header_map                           headers_;
     std::unordered_map<size_t, std::any> context_;
 
-    std::shared_ptr<connection>          client_;
+    // std::shared_ptr<connection> client_;
+    connection          *client_;
+    // sockfd          client_;
 
     friend class parser<http_request>;
 
     public:
 
     int socket() const { return client_->socket(); }
-    std::shared_ptr<connection> &client() { return client_; }
+    // std::shared_ptr<connection> client() { return client_; }
+    connection *client() { return client_; }
 
     http_method method() const { return method_; }
 

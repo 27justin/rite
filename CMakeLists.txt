@@ -5,7 +5,8 @@ project(kana CXX)
 file(GLOB kana_SOURCES src/*.cpp src/http/*.cpp)
 
 add_library(kana STATIC ${kana_SOURCES})
-target_compile_options(kana PUBLIC "-std=c++23")
+target_compile_options(kana PUBLIC "-std=c++23" "-g3")
+target_compile_options(kana PUBLIC "-Werror" "-Wno-unused-parameter" "-Wall" "-Wextra" "-pedantic" "-Wno-missing-field-initializers")
 target_include_directories(kana PUBLIC include)
 
 set(JT_BUILD_EXAMPLES OFF)

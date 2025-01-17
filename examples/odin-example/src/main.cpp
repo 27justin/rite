@@ -16,8 +16,8 @@ struct demo_controller : public kana::controller {
               .method = GET | POST | HEAD,
               .path = "/load",
               .handler = [](http_request &request) -> http_response {
-                  auto random_timeout = 10 + (rand() % 10);
-                  std::this_thread::sleep_for(std::chrono::milliseconds(random_timeout));
+                  // auto random_timeout = 100 + (rand() % 250);
+                  // std::this_thread::sleep_for(std::chrono::milliseconds(random_timeout));
                   http_response response(http_status_code::eOk, "Hello :')");
                   response.set_header("Connection", "keep-alive");
                   response.set_header("Keep-Alive", "timeout=5");
@@ -50,9 +50,10 @@ main() {
     // clang-format off
     server.worker_threads(10)
           .bind({ INADDR_ANY, 2002, kana::protocol::http })
-          .load_extension<kana::extensions::odin>(kana::extensions::odin_config {
-              .admin_path = "/__server"
-          });
+          // .load_extension<kana::extensions::odin>(kana::extensions::odin_config {
+          //     .admin_path = "/__server"
+          // });
+        ;
     server.start();
     return 0;
 }

@@ -159,7 +159,6 @@ body_(const std::string &inner) {
 http_response
 odin_endpoint::index(http_request &request) {
     std::string      content;
-    odin_percentiles p = odin->calculate_percentiles();
     return http_response(http_status_code::eOk, body_(R"(
 <h1>Admin Panel</h1>
 <div class="flex justify-between">
@@ -293,7 +292,7 @@ odin_endpoint::request_list(http_request &request) {
     std::string body = "";
     {
         std::lock_guard<std::mutex> lock(odin->ring_buffer_mtx_);
-        for (int i = 0; i < std::min(num, odin->ring_buffer_.size()); ++i) {
+        for (size_t i = 0; i < std::min(num, odin->ring_buffer_.size()); ++i) {
             body += serialize_odin_request(odin->ring_buffer_[i]);
         }
     }

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <limits>
 #include <mutex>
 #include <print>
 #include <sys/epoll.h>
 #include <sys/socket.h>
-#include <condition_variable>
 
 using namespace std::chrono;
 
@@ -20,7 +20,7 @@ class connection {
     steady_clock::time_point last_active_;
     microseconds             keep_alive_; // in usecs (microseconds)
     std::condition_variable  cv_;
-    uintmax_t refs_;
+    std::atomic_intmax_t     refs_;
 
     mutable std::mutex lock_;
 
@@ -32,11 +32,20 @@ class connection {
       , epoll_set_(epoll_set)
       , last_active_(steady_clock::now())
       , keep_alive_(seconds(5))
-      , lock_()
-      , refs_(1) {}
+      , refs_(1)
+      , lock_() {}
 
     ~connection() {
         close(socket_);
+        // NOTE: The following peace of code is deadly.  When firing
+        // at the server with very high RPS, I frequently encountered
+        // an issue, where the server would crash with various
+        // syptoms.  sometimes it was a SEGFAULT, other times a
+        // malloc(): unsorted double linked list corrupted From my
+        // research, calling close() on a socket also automatically
+        // removes it from all active epoll sets, so this should be
+        // safe from memory leaks.
+        //
         epoll_ctl(epoll_set_, EPOLL_CTL_DEL, socket_, nullptr);
     }
 
@@ -54,9 +63,7 @@ class connection {
 
     steady_clock::time_point last_active() const { return last_active_; }
 
-    bool idle() const {
-        return duration_cast<microseconds>(steady_clock::now() - last_active_) > keep_alive_;
-    }
+    bool idle() const { return duration_cast<microseconds>(steady_clock::now() - last_active_) > keep_alive_; }
 
     void set_keep_alive(microseconds usecs) {
         std::lock_guard<std::mutex> lock(lock_);
@@ -67,21 +74,17 @@ class connection {
     microseconds get_keep_alive() const { return keep_alive_; }
 
     void take() {
-        std::lock_guard<std::mutex> lock(lock_);
-        refs_++;
-        std::print("Connection got adopted. {}\n", refs_);
+        refs_.fetch_add(1);
+        // std::print("Connection got adopted. {}\n", refs_.load());
         cv_.notify_all();
     }
-
     void release() {
-
-        std::lock_guard<std::mutex> lock(lock_);
-        refs_--;
+        refs_.fetch_sub(1);
         cv_.notify_all();
     }
     std::condition_variable &cv() { return cv_; }
-    std::mutex &mutex() { return lock_; }
-    uintmax_t use_count() const { return refs_; }
+    std::mutex              &mutex() { return lock_; }
+    uintmax_t                use_count() const { return refs_.load(); }
 };
 
 struct connection_state_comparator {

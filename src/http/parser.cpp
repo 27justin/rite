@@ -7,8 +7,9 @@
 #include "connection.hpp"
 
 bool
-parser<http_request>::parse(const std::shared_ptr<connection> &connection, std::span<const std::byte> data, http_request &req) {
-    req.client_ = connection;
+// parser<http_request>::parse(const std::shared_ptr<connection> &conn, std::span<const std::byte> data, http_request &req) {
+parser<http_request>::parse(connection *conn, std::span<const std::byte> data, http_request &req) {
+    req.client_ = conn;
     std::string        request_string(reinterpret_cast<const char *>(data.data()), data.size());
     std::istringstream request_stream(request_string);
     std::string        line;
@@ -87,10 +88,10 @@ auto
 decode_uri_component(const std::string &encoded) {
     std::string decoded;
     char        ch;
-    int         i = 0;
+    size_t         i = 0;
     while (i < encoded.length()) {
         if (encoded[i] == '%') {
-            sscanf(encoded.substr(i + 1, 2).c_str(), "%x", &ch);
+            sscanf(encoded.substr(i + 1, 2).c_str(), "%x", (unsigned int *) &ch);
             decoded += ch;
             i += 3; // Skip past the %xx
         } else {
@@ -111,7 +112,7 @@ parser<query_parameters>::parse(std::string_view query_string) {
     std::string       param;
     std::stringstream ss = std::stringstream(std::string(query_string.substr(current)));
     while (std::getline(ss, param, '&')) {
-        ssize_t equal = param.find('=');
+        auto equal = param.find('=');
         if (equal == std::string::npos) {
             // Empty parameters are permitted, these will be
             // constructed with an empty string.  Though maybe we
