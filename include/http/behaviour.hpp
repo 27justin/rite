@@ -35,7 +35,8 @@ class layer {
     std::pair<endpoint *, rite::http::path::result> find_endpoint(const http_request &request) {
         for (auto &endpoint : endpoints_) {
             // Skip endpoints whose methods do not match our request.
-            if((endpoint.method & static_cast<int>(request.method())) == 0) continue;
+            if ((endpoint.method & static_cast<int>(request.method())) == 0)
+                continue;
 
             rite::http::path path = endpoint.path;
             auto             result = path.match(std::string(request.path()));

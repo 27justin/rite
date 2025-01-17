@@ -86,8 +86,8 @@ odin::post_send(http_request &request, http_response &response) {
                                                    .ip = request.client()->addr(),
                                                    .ip_len = request.client()->addr_length(),
                                                    .method = request.method(),
-                                                   .request_body_len = request.body().size(),  // TODO: Not available yet
-                                                   .version = request.version_, // TODO: Not available yet
+                                                   .request_body_len = request.body().size(), // TODO: Not available yet
+                                                   .version = request.version_,               // TODO: Not available yet
                                                    // .protocol = ,        // TODO: Not available yet
                                                    .time = timing.received,
                                                    .processing_time = duration_cast<std::chrono::microseconds>(timing.processed - timing.received).count() });
