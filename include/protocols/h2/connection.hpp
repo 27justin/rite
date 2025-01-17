@@ -5,6 +5,8 @@
 #include <tls.hpp>
 #include "hpack.hpp"
 
+#include <http/request.hpp>
+
 namespace h2 {
     struct parameters {
         struct {
@@ -22,7 +24,6 @@ class connection<h2::protocol> : public connection<tls> {
         CLIENT_PREFACE,
         WAIT_CLIENT_SETTINGS,
         // WAIT_CLIENT_SETTINGS_ACK, // "optional"
-
         IDLE,
         OPEN,
         RSV_LOCAL,
@@ -35,8 +36,12 @@ class connection<h2::protocol> : public connection<tls> {
 
     connection_state                state_;
     std::optional<h2::frame>        unfinished_frame_;
-    std::unique_ptr<h2::parameters> parameters_;
+
     public:
+    std::unique_ptr<h2::parameters> parameters_;
+
+    std::map<uint32_t, h2::stream> streams_;
+
     connection(connection<tls> &&channel)
       : connection<tls>(std::move(channel))
       , state_(CLIENT_PREFACE)
@@ -44,7 +49,7 @@ class connection<h2::protocol> : public connection<tls> {
 
       };
 
-    void process(std::span<std::byte>);
+    std::optional<http_request> process(std::span<std::byte>);
 
     // Terminate the connection with a GOAWAY
     void terminate();
@@ -55,5 +60,4 @@ class connection<h2::protocol> : public connection<tls> {
     using connection<tls>::write;
     int write(const h2::frame &frame);
 
-    void     push();
 };

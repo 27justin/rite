@@ -96,22 +96,6 @@ parser<http_request>::parse(connection<void> *conn, std::span<const std::byte> d
     return true;
 }
 
-auto
-decode_uri_component(const std::string &encoded) {
-    std::string decoded;
-    char        ch;
-    size_t         i = 0;
-    while (i < encoded.length()) {
-        if (encoded[i] == '%') {
-            sscanf(encoded.substr(i + 1, 2).c_str(), "%x", (unsigned int *) &ch);
-            decoded += ch;
-            i += 3; // Skip past the %xx
-        } else {
-            decoded += encoded[i++];
-        }
-    }
-    return decoded;
-}
 
 std::optional<query_parameters>
 parser<query_parameters>::parse(std::string_view query_string) {
@@ -140,4 +124,22 @@ parser<query_parameters>::parse(std::string_view query_string) {
         query.parameters_.emplace_back(std::make_tuple<std::string, std::string>(decode_uri_component(key), decode_uri_component(value)));
     }
     return query;
+}
+
+
+std::string
+decode_uri_component(const std::string &encoded) {
+    std::string decoded;
+    char        ch;
+    size_t         i = 0;
+    while (i < encoded.length()) {
+        if (encoded[i] == '%') {
+            sscanf(encoded.substr(i + 1, 2).c_str(), "%x", (unsigned int *) &ch);
+            decoded += ch;
+            i += 3; // Skip past the %xx
+        } else {
+            decoded += encoded[i++];
+        }
+    }
+    return decoded;
 }

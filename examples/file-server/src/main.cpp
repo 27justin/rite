@@ -1,72 +1,103 @@
+#include <chrono>
+#include <cstdlib>
+#include <future>
+#include <iostream>
+
+#include <arpa/inet.h>
+#include <regex>
+#include <sys/socket.h>
+#include <thread>
 #include <filesystem>
-struct filesystem : public kana::controller {
-    static constexpr ssize_t CHUNK_SIZE = 16384;
-    public:
-    std::string base_;
-    filesystem(const std::string &base)
-      : base_(base) {};
+#include <iostream>
 
-    void setup(kana::controller_config &config) {
-        // clang-format off
-        config.add_endpoint(kana::endpoint{
-          .method  = GET,
-          .path    = std::regex(".*"),
-          .handler = [this](http_request &req) -> http_response {
-              std::vector<std::string> fs_path{};
-              std::istringstream req_path = std::istringstream(std::string(req.path()));
+#include <protocols/http.hpp>
+#include <protocols/https.hpp>
+#include <runtime.hpp>
+#include <server.hpp>
+#include <http/parser.hpp>
+#include <http/endpoint.hpp>
+#include <http/behaviour.hpp>
 
-              std::string slice;
-              while(std::getline(req_path, slice, '/')) {
-                  fs_path.push_back(slice);
-              }
+constexpr char BASE[] = "/mnt/SSD-2/";
+constexpr char STATIC_IMAGES[] = "Torrents";
 
-              std::filesystem::path file = std::filesystem::path{base_};
-              for(const std::string &slice : fs_path) {
-                  file = file / slice;
-              }
-              // Check that the file is definitely under `base_`, if
-              // it isn't we are encountering directory traversal
-              // and should error out.
-              std::filesystem::path parent = std::filesystem::path{base_};
-              std::filesystem::path rel = std::filesystem::relative(file, parent);
-              if(rel.empty() || (!rel.empty() && rel.native().starts_with(".."))) {
-                  std::print("Prevented directory traversal to: {}\nPath: {}\n", rel.string(), file.string());
-                  return http_response(http_status_code::eForbidden, "");
-              }
+int
+main() {
+    rite::runtime *runtime = new rite::runtime();
+    runtime->worker_threads(8);
 
-              http_response response;
-              if(std::filesystem::exists(file)) {
-                  // File
-                  if(std::filesystem::is_regular_file(file)) {
-                      response.set_content_length(std::filesystem::file_size( file ));
-                      response.set_status_code(http_status_code::eOk);
-                      req.set_context<std::FILE*>(std::fopen(file.string().c_str(), "rb"));
+    rite::http::endpoint image = rite::http::endpoint {
+        .method = http_method::GET,
+        .path = rite::http::path("/{file:.*}"),
+        .handler = [](http_request &request, rite::http::path::result mapping) -> http_response {
+            using path = std::filesystem::path;
+            auto file_path = mapping.get<std::string>("file");
+            path file = std::filesystem::path(*file_path);
 
-                      response.event(http_response::event::chunk, [&](http_response &response) -> void {
-                          std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(CHUNK_SIZE);
-                          auto &fstream = req.context<std::FILE*>().value().get();
-                          auto bytes = std::fread((char *) buffer.get(), 1, CHUNK_SIZE, fstream);
-                          response.stream(kana::buffer (
-                                              std::move(buffer),
-                                              static_cast<ssize_t>(bytes),
-                                              bytes < CHUNK_SIZE
-                                              ));
-                          std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                      });
-                      return response;
-                  }if(std::filesystem::is_directory(file)) {
-                      // Create index page
-                      std::string index("");
-                      for(auto &entry : std::filesystem::directory_iterator{file}) {
-                          index += std::format("<li class=\"{}\"><a href=\"{}/{}\">{}</a></li>\n", entry.is_directory() ? "directory" : "file", req.path().size() > 1 ? req.path() : "", entry.path().filename().string(), entry.path().filename().string());
-                      }
-                      std::string page = std::format("<!DOCTYPE html><html><head></head><body><ul>{}</ul></body></html>", index);
-                      return http_response(http_status_code::eOk, page);
-                  }
-              }
-              return http_response(http_status_code::eNotFound, "Not found.");
-          }
-        });
-        // clang-format on
-    }
-};
+            if(std::filesystem::exists(file)) {
+                http_response response {};
+                response.set_status_code(http_status_code::eOk);
+
+                request.set_context<std::FILE*>(std::fopen(file.c_str(), "rb"));
+                response.set_header("Content-Type", "text/plain");
+                response.set_content_length(std::filesystem::file_size(file));
+
+                response.event(http_response::event::chunk, [&](http_response &response) {
+                    std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(16384);
+
+                    auto &fstream = request.context<std::FILE*>().value().get();
+                    auto num = std::fread((void *) buffer.get(), 1, 16384, fstream);
+
+                    rite::buffer buf(std::move(buffer), num, num < 16384);
+                    if(num < 16384) {
+                        std::fclose(fstream);
+                    }
+                    response.stream(std::move(buf));
+                });
+
+                return response;
+            }else{
+                std::cerr << "Tried to access file: " << file << std::endl;
+                return http_response(http_status_code::eNotFound, "File could not be found.");
+            }
+        },
+        .asynchronous = true
+    };
+
+    // A layer represents the default behaviour of the server.
+    // The default `layer` that we expose is a very simple
+    // path mapping controller suitable for CRUD applications.
+    //
+    // To cater to a large audience however; the https/http server
+    // both do not really care for whatever the layer (`behaviour` on the server instance)
+    // is, all it has to do is implement an `on_request(http_request) -> http_response`
+    // function.
+    std::shared_ptr<rite::http::layer> lyr = std::make_shared<rite::http::layer>();
+    lyr->add_endpoint(image);
+
+    // clang-format off
+    rite::server<http>::config http_config = rite::server<http>::config();
+    http_config
+        .behaviour(lyr)
+        .ip(INADDR_ANY)
+        .port(2002)
+        .max_connections(100);
+
+    rite::server<https>::config https_config = rite::server<https>::config();
+    https_config
+        .private_key_file("private.pem")
+        .certificate_file("cert.crt")
+        .behaviour(lyr)
+        .ip(INADDR_ANY)
+        .port(2003)
+        .max_connections(100);
+    // clang-format on
+
+    rite::server<http> http_server(http_config);
+    rite::server<https> https_server(https_config);
+
+    runtime->attach<rite::server<http>>(http_server);
+    runtime->attach<rite::server<https>>(https_server);
+    runtime->start();
+    return 0;
+}

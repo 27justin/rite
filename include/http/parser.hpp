@@ -16,6 +16,10 @@ struct parser;
 template<typename T>
 struct connection;
 
+
+std::string
+decode_uri_component(const std::string &encoded);
+
 // Specialization for http_request
 template<>
 struct parser<http_request> {

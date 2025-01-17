@@ -23,17 +23,20 @@
 #include <chrono>
 #include <deque>
 #include <future>
-#include <kana.hpp>
 #include <sys/socket.h>
 
+#include <http/behaviour.hpp>
+#include <http/request.hpp>
+#include <http/response.hpp>
 #include <http/version.hpp>
+#include <http/query_parameters.hpp>
 
 // Admin UI
 // TODO: Gosh, write better introductions...
 
 #define ODIN_VERSION "0.0.1-dev"
 
-namespace kana::extensions {
+namespace rite::extensions {
 struct odin_config {
     std::string admin_path;
 };
@@ -49,7 +52,7 @@ struct odin_percentiles {
 // to prevent them from cluttering the access log.
 struct odin_admin_user {};
 
-// HTTP request for introspection, only saving fields that are of importance to us
+// // HTTP request for introspection, only saving fields that are of importance to us
 struct odin_http_request {
     std::string                           path;
     query_parameters                      query;
@@ -58,12 +61,12 @@ struct odin_http_request {
     http_method                           method;
     size_t                                request_body_len;
     http_version                          version;
-    kana::protocol                        protocol;
+    // rite::protocol                        protocol;
     std::chrono::steady_clock::time_point time;
     long int                              processing_time; // us (microseconds)
 };
 
-class odin : public kana::extension {
+class odin : public rite::http::extension {
     public:
     std::atomic<float> rps_ = 0.0;
     std::mutex         mtx;
@@ -93,33 +96,21 @@ class odin : public kana::extension {
     odin(odin_config config);
     ~odin() {}
 
-    bool is_crawler(const http_request &request);
-
-    void on_load(kana::server &server) override;
-
     // http_request events
-    void on_request(http_request &request);
-    void pre_send(http_request &request, http_response &response);
-    void post_send(http_request &request, http_response &response);
+    void on_request(http_request &request) override;
+    void pre_send(http_request &request, http_response &response) override;
+    void post_send(http_request &request, http_response &response) override;
+
+    void on_hook(rite::http::layer &server) override;
 
     void             calculate_rps();
     odin_percentiles calculate_percentiles();
-};
 
-class odin_endpoint : public kana::controller {
-    public:
-    std::string             prefix_;
-    kana::extensions::odin *odin;
-    odin_endpoint(std::string prefix, kana::extensions::odin *ext)
-      : prefix_(prefix)
-      , odin(ext) {};
 
-    http_response index(http_request &request);
-    http_response css(http_request &request);
-    http_response card(http_request &);
-    http_response request_list(http_request &);
-
-    void setup(kana::controller_config &config) override;
+    http_response index(http_request &request, rite::http::path::result);
+    http_response css(http_request &request, rite::http::path::result);
+    http_response card(http_request &, rite::http::path::result);
+    http_response request_list(http_request &, rite::http::path::result);
 };
 
 }

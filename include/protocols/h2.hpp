@@ -10,11 +10,15 @@ constexpr static size_t MAX_FRAME_SIZE = 1024 * 1024 * 4; // 4 MiB
 namespace h2 {
     enum class frame_state { eInsufficientData, eInvalid, eTooBig };
 
+    using stream_id = uint32_t;
+
     struct stream {
         enum stream_state {
             idle,
             open,
-            half_closed
+            reserved,
+            half_closed,
+            closed
         };
         stream_state state;
         uint32_t stream_id;
@@ -95,5 +99,10 @@ template<>
 struct h2::frame::characteristics<h2::frame::type::DATA> {
     static constexpr uint8_t END_STREAM = 0x1;
     static constexpr uint8_t PADDED = 0x8;
+};
+
+template<>
+struct h2::frame::characteristics<h2::frame::type::PING> {
+    static constexpr uint8_t ACK = 0x1;
 };
 

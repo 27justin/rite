@@ -1,14 +1,15 @@
 #pragma once
-#include "server.hpp"
 #include <iostream>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <stdexcept>
-#include "tls.hpp"
+#include <memory>
 
-struct https {
-    class config : public kana::server<void>::config {};
-};
+#include "server.hpp"
+#include "tls.hpp"
+#include <http/behaviour.hpp>
+
+struct https {};
 
 template<typename T>
 struct protocol{};
@@ -53,21 +54,29 @@ static int alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *ou
 }
 
 template<>
-class kana::server<https> : public kana::server<void> {
+class rite::server<https> : public rite::server<void> {
     public:
-    struct config : public kana::server<void>::config {
+    struct config : public rite::server<void>::config {
         std::string private_key_file_;
         std::string certificate_file_;
+        std::shared_ptr<rite::http::layer> behaviour_;
 
         public:
         config &private_key_file(std::string file) {
             private_key_file_ = file;
             return *this;
         }
+
         config &certificate_file(std::string file) {
             certificate_file_ = file;
             return *this;
         }
+
+        config &behaviour(std::shared_ptr<rite::http::layer> impl) {
+            behaviour_ = impl;
+            return *this;
+        }
+
         friend class server<https>;
     };
 
@@ -78,7 +87,7 @@ class kana::server<https> : public kana::server<void> {
     public:
     server(const config &server_config);
 
-    connection<void> *on_accept(connection<void>::native_handle socket, struct sockaddr_storage *addr, socklen_t len) override;
+    connection<void> *on_accept(connection<void>::native_handle socket, struct sockaddr_storage addr, socklen_t len) override;
 
     void on_read(connection<void> *socket) override;
 };

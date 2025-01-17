@@ -4,32 +4,35 @@
 
 #include "plain.hpp"
 #include "server.hpp"
+#include "http/behaviour.hpp"
 
-struct http {};
+struct http {
+    struct client {};
+};
 
 template<>
-class kana::server<http> : public kana::server<void> {
+class rite::server<http> : public rite::server<void> {
     public:
-    server(const kana::server<void>::config &config)
-      : server<void>(config) {}
+    struct config : public rite::server<void>::config {
+        std::shared_ptr<rite::http::layer> behaviour_;
 
-    connection<void> *on_accept(connection<void>::native_handle socket, struct sockaddr_storage *addr, socklen_t len) override {
-        std::cout << "HTTP: Got new client" << std::endl;
-        return new connection<plain>(socket, *addr, len);
-    }
-
-    void on_read(connection<void> *socket) override {
-        thread_local
-            std::unique_ptr<std::byte[]> buffer = std::make_unique<std::byte[]>(16384);
-
-        ssize_t bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
-        if (bytes < 1) {
-            std::print("Connection died.\n");
-            socket->release();
-            socket->close();
-            return;
+        public:
+        config &behaviour(std::shared_ptr<rite::http::layer> impl) {
+            behaviour_ = impl;
+            return *this;
         }
-        std::print("Received {}b:\n{}\n", bytes, std::string_view((char*) buffer.get(), bytes));
-        socket->release();
-    }
+
+        friend class rite::server<::http>;
+    };
+    protected:
+    config   config_;
+
+    public:
+    server(const config &server_config)
+      : server<void>(server_config)
+      , config_(server_config) {}
+
+    connection<void> *on_accept(connection<void>::native_handle socket, struct sockaddr_storage addr, socklen_t len) override;
+
+    void on_read(connection<void> *socket) override;
 };

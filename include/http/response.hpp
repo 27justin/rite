@@ -41,10 +41,10 @@ struct http_response {
     friend class serializer<http_response>;
 
     public:
-    std::shared_ptr<jt::mpsc<kana::buffer, jt::fifo>> channel;
+    std::shared_ptr<jt::mpsc<rite::buffer, jt::fifo>> channel;
 
     http_response()
-        : channel(std::make_shared<jt::mpsc<kana::buffer, jt::fifo>>()) {}
+        : channel(std::make_shared<jt::mpsc<rite::buffer, jt::fifo>>()) {}
 
     // http_response(const http_response &) = delete;
 
@@ -52,7 +52,7 @@ struct http_response {
     /// the given parameters.
     http_response(http_status_code status_code, std::string body)
       : status_code_(status_code)
-      , channel(std::make_shared<jt::mpsc<kana::buffer, jt::fifo>>()) {
+      , channel(std::make_shared<jt::mpsc<rite::buffer, jt::fifo>>()) {
         headers_["Content-Type"] = "text/html";
         set_content_length(body.size());
         this->body(body);
@@ -71,7 +71,7 @@ struct http_response {
         std::span<const std::byte> span = std::span<const std::byte>((const std::byte *) val.data(), val.size());
         std::copy(span.begin(), span.end(), heap_mem.get());
 
-        stream(kana::buffer(
+        stream(rite::buffer(
                 std::move(heap_mem),
                 val.size(),
                 true
@@ -101,7 +101,7 @@ struct http_response {
         std::copy_n(data.begin(), span.size_bytes(), span.begin());
 
         //clang-format off
-        channel->tx().dispatch(kana::buffer(
+        channel->tx().dispatch(rite::buffer(
           std::move(heap_mem),
           static_cast<ssize_t>(data.size()),
           false
@@ -117,7 +117,7 @@ struct http_response {
         stream(std::span<std::byte>(data));
     }
 
-    void stream(kana::buffer &&data) {
+    void stream(rite::buffer &&data) {
         channel->tx().dispatch(std::move(data));
     }
 

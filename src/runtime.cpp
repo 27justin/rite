@@ -2,7 +2,7 @@
 #include <iostream>
 
 void
-kana::runtime::start() {
+rite::runtime::start() {
     if(num_workers_ == 0) {
         std::cerr << "Runtime: starting with 0 threads configured, are you sure this is intended?" << std::endl;
     }
@@ -24,13 +24,13 @@ kana::runtime::start() {
 }
 
 void
-kana::runtime::worker_threads(size_t num) {
+rite::runtime::worker_threads(size_t num) {
     threads_.reserve(num);
     num_workers_ = num;
 }
 
 void
-kana::runtime::dispatch(std::function<void()> &&work) {
+rite::runtime::dispatch(std::function<void()> &&work) {
     thread_pool_.tx()(std::move(work));
 }
 

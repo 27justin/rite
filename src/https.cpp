@@ -1,16 +1,19 @@
 #include <iostream>
 
-#include <protocols/https.hpp>
 #include <protocols/h2.hpp>
 #include <protocols/h2/connection.hpp>
+#include <protocols/https.hpp>
+
+#include <netdb.h>
+#include <netinet/in.h>
 
 connection<void> *
-kana::server<https>::on_accept(connection<void>::native_handle socket, struct sockaddr_storage *addr, socklen_t len) {
+rite::server<https>::on_accept(connection<void>::native_handle socket, struct sockaddr_storage addr, socklen_t len) {
     std::cout << "HTTPS: Got new client" << std::endl;
-    try{
-        ::connection<tls> *connection = new ::connection<tls>(ctx_, socket, *addr, len);
-        const uint8_t *alpn;
-        uint32_t alpn_len;
+    try {
+        ::connection<tls> *connection = new ::connection<tls>(ctx_, socket, addr, len);
+        const uint8_t     *alpn;
+        uint32_t           alpn_len;
         SSL_get0_alpn_selected(connection->ssl(), &alpn, &alpn_len);
 
         // If alpn[0..2] == "h2", we move the TLS connection into
@@ -25,19 +28,16 @@ kana::server<https>::on_accept(connection<void>::native_handle socket, struct so
             // Return a plain HTTP connection
         }
         return connection;
-    }catch(std::exception &e) {
+    } catch (std::exception &e) {
         std::cerr << "TLS handshake failed: " << e.what() << std::endl;
         return connection<void>::invalid;
     }
 }
 
 void
-kana::server<https>::on_read(connection<void> *socket) {
+rite::server<https>::on_read(connection<void> *socket) {
     static thread_local std::unique_ptr<std::byte[]> buffer = std::make_unique<std::byte[]>(16384);
-    auto lock = socket->lock();
-
-    std::print("on_read: "); std::cout << socket << "\n";
-
+    auto                                             lock = socket->lock();
     ssize_t bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
     if (bytes < 1) {
         std::print("Connection died.\n");
@@ -49,16 +49,55 @@ kana::server<https>::on_read(connection<void> *socket) {
     connection<h2::protocol> *h2_sock = dynamic_cast<connection<h2::protocol> *>(socket);
     if (h2_sock) {
         try {
-            h2_sock->process(std::span<std::byte>(buffer.get(), bytes));
+            uint32_t                    stream_id = 0;
+            std::optional<http_request> request = h2_sock->process(std::span<std::byte>(buffer.get(), bytes));
+            if (request) {
+                config_.behaviour_->on_request(*request);
+                stream_id = request->context<h2::stream_id>().value();
+
+                // Take up a new reference for the handler
+                socket->take();
+                config_.behaviour_->handle(*request, [this, &request, h2_sock, stream_id](http_response &&response) {
+                    std::vector<h2::hpack::header> headers_;
+                    headers_.push_back(h2::hpack::header{ ":status", std::to_string(static_cast<int>(response.status_code())) });
+                    for (auto const &[k, v] : response.headers()) {
+                        headers_.push_back(h2::hpack::header{ k, v });
+                    }
+                    h2_sock->parameters_->hpack.tx.serialize(headers_);
+                    auto preload = h2_sock->parameters_->hpack.tx.finish(stream_id);
+                    config_.behaviour_->pre_send(*request, response);
+                    h2_sock->write(preload);
+
+                    rite::buffer                            buf;
+                    std::shared_ptr<jt::mpsc<rite::buffer>> channel = response.channel;
+                    jt::mpsc<rite::buffer>::consumer       &rx = channel->rx();
+                    do {
+                        response.trigger(http_response::event::chunk);
+                        buf = rx.wait();
+                        h2::frame frame;
+                        frame.stream_identifier = stream_id;
+                        frame.type = h2::frame::DATA;
+                        frame.flags = buf.last ? h2::frame::characteristics<h2::frame::DATA>::END_STREAM : 0;
+                        frame.length = buf.len;
+                        frame.data = std::vector<std::byte>(buf.data.get(), buf.data.get() + buf.len);
+                        h2_sock->write(frame);
+                    } while (!buf.last);
+                    config_.behaviour_->post_send(*request, response);
+                    // Release reference to allow the connection to drop
+                    h2_sock->release();
+                });
+            }
         } catch (std::exception &e) {
             std::print("H2[process]: Failed: {}\n", e.what());
             h2_sock->terminate();
+        } catch (rite::http::layer::error err) {
+            // Probably eNoEndpoint (404)
         }
     }
     socket->release();
 }
 
-kana::server<https>::server(const config &server_config)
+rite::server<https>::server(const config &server_config)
   : server<void>(server_config)
   , config_(server_config) {
 

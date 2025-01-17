@@ -21,7 +21,7 @@ template<typename T>
 class parser;
 
 struct http_request {
-    private:
+    public:
     std::string                          path_;
     query_parameters                     query_;
     http_method                          method_;
@@ -48,8 +48,12 @@ struct http_request {
     const header_map &headers() const { return headers_; }
 
     template<typename T>
-    void set_context(T &&value) {
-        context_[typeid(T).hash_code()] = std::move(value);
+    void set_context(T&& value) {
+        // Use std::decay to remove references and cv-qualifiers
+        using ValueType = typename std::decay<T>::type;
+
+        // Store the value in the context map
+        context_[typeid(ValueType).hash_code()] = std::make_any<ValueType>(std::forward<T>(value));
     }
 
     template<typename T>

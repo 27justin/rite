@@ -4,7 +4,7 @@
 
 #include <functional>
 
-namespace kana {
+namespace rite {
 class runtime {
     jt::mpsc<std::function<void()>> thread_pool_;
     std::vector<std::thread>        threads_;

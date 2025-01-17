@@ -5,6 +5,6 @@ file(GLOB example_SOURCES src/*.cpp)
 add_executable(odin-example ${example_SOURCES})
 target_include_directories(odin-example PRIVATE include)
 
-target_link_libraries(odin-example PUBLIC kana)
-target_link_libraries(odin-example PUBLIC kana-odin)
+target_link_libraries(odin-example PUBLIC rite)
+target_link_libraries(odin-example PUBLIC rite-odin)
 

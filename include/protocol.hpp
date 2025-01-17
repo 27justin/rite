@@ -1,6 +1,6 @@
 #pragma once
 
-namespace kana {
+namespace rite {
 enum class protocol {
     http,
     https,

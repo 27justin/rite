@@ -14,8 +14,8 @@ public:
 };
 
 template<>
-struct serializer<kana::protocol> {
+struct serializer<rite::protocol> {
 public:
-    std::string_view operator()(const kana::protocol &proto) const;
+    std::string_view operator()(const rite::protocol &proto) const;
 };
 

@@ -4,7 +4,7 @@
 #include <memory>
 #include <print>
 
-namespace kana {
+namespace rite {
 class buffer {
     public:
     std::unique_ptr<std::byte[]> data;

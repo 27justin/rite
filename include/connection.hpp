@@ -121,17 +121,3 @@ class connection {
 // such that inline I'd (apparently only have the option of uintptr_t, but I'd like to avoid casting it to connection<> when using connection<T>::invalid)
 template<typename T>
 connection<T> *connection<T>::invalid = reinterpret_cast<connection<T>*>((uintptr_t) 0x8000000000000000);
-
-// struct connection_state_comparator {
-
-//     bool operator()(const connection **left, const connection **right) {
-//         // Active connections have the MSB of the pointer set to one, these ones
-//         // will thus gravitate to the beginning of the std::set.
-//         // Stale pointers will be updated to be zeroed out on the MSBs, these ones can be
-//         // safely reused.
-//         // Using this, we should be able to perform a binary search for usage space in our std::set, without reallocations.
-//         uint16_t msb_left = reinterpret_cast<uintptr_t>(left) & (static_cast<uintptr_t>(std::numeric_limits<uint16_t>::max()) << 48);
-//         uint16_t msb_right = reinterpret_cast<uintptr_t>(right) & (static_cast<uintptr_t>(std::numeric_limits<uint16_t>::max()) << 48);
-//         return msb_left > msb_right;
-//     }
-// };

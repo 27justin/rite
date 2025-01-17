@@ -1,7 +1,7 @@
 #include <arpa/inet.h>
 #include <chrono>
 #include <future>
-#include <kana/extensions/odin.hpp>
+#include <rite/extensions/odin.hpp>
 #include <memory>
 #include <mutex>
 #include <netdb.h>
@@ -10,14 +10,18 @@
 #include <sys/socket.h>
 #include <thread>
 
-#include "kana/extensions/odin/resources.hpp"
+#include "rite/extensions/odin/resources.hpp"
 
 using namespace std::chrono;
+using namespace rite::http;
 
-namespace kana::extensions {
+namespace rite::extensions {
+
 odin::odin(odin_config config)
   : config_(config)
   , timings_(std::make_unique<odin_timing[]>(32768)) {
+    std::print("[かな::オーディン]: Initializing version {}\n", ODIN_VERSION);
+
     // Set up RPS thread
     std::thread rps([this]() {
         while (true) {
@@ -29,13 +33,19 @@ odin::odin(odin_config config)
 }
 
 void
-odin::on_load(kana::server &server) {
-    std::print("[かな::オーディン]: Initializing version {}\n", ODIN_VERSION);
-    server.event(kana::server::event::on_request, [this](http_request &r) { on_request(r); });
-    server.event(kana::server::event::pre_send, std::bind(&odin::pre_send, this, std::placeholders::_1, std::placeholders::_2));
-    server.event(kana::server::event::post_send, std::bind(&odin::post_send, this, std::placeholders::_1, std::placeholders::_2));
+odin::on_hook(rite::http::layer &server) {
+    // server.event(rite::http::layer::event::on_request, [this](http_request &r) { on_request(r); });
+    // server.event(rite::http::layer::event::pre_send, std::bind(&odin::pre_send, this, std::placeholders::_1, std::placeholders::_2));
+    // server.event(rite::http::layer::event::post_send, std::bind(&odin::post_send, this, std::placeholders::_1, std::placeholders::_2));
 
-    server.register_controller<odin_endpoint>(config_.admin_path, this);
+    server.add_endpoint(rite::http::endpoint{ .method = GET, .path = path("/__server/?$"), .handler = std::bind(&odin::index, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
+
+    server.add_endpoint(rite::http::endpoint{ .method = GET, .path = path("/__server/css"), .handler = std::bind(&odin::css, this, std::placeholders::_1, std::placeholders::_2) });
+    server.add_endpoint(
+        rite::http::endpoint{ .method = GET, .path = path("/__server/\\!component/card.*"), .handler = std::bind(&odin::card, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
+    server.add_endpoint(rite::http::endpoint{
+      .method = GET, .path = path("/__server/\\!component/request-list.*"), .handler = std::bind(&odin::request_list, this, std::placeholders::_1, std::placeholders::_2), .asynchronous = false });
+
 }
 
 void
@@ -79,7 +89,7 @@ odin::post_send(http_request &request, http_response &response) {
                                                    .method = request.method(),
                                                    .request_body_len = 0,             // TODO: Not available yet
                                                    .version = http_version::HTTP_1_1, // TODO: Not available yet
-                                                   .protocol = protocol::http,        // TODO: Not available yet
+                                                   // .protocol = ,        // TODO: Not available yet
                                                    .time = timing.received,
                                                    .processing_time = duration_cast<std::chrono::microseconds>(timing.processed - timing.received).count() });
         if (ring_buffer_.size() > 5'000) {
@@ -126,19 +136,6 @@ odin::calculate_percentiles() {
     return percentiles;
 }
 
-void
-odin_endpoint::setup(kana::controller_config &config) {
-    config.add_endpoint(kana::endpoint{ .method = GET, .path = std::regex(std::format("{}/?$", prefix_)), .handler = [this](auto &r) {
-                                           return index(r);
-    }, .asynchronous = true });
-
-    config.add_endpoint(kana::endpoint{ .method = GET, .path = "/__server/css", .handler = std::bind(&odin_endpoint::css, this, std::placeholders::_1) });
-    config.add_endpoint(
-      kana::endpoint{ .method = GET, .path = std::regex("/__server/\\!component/card.*"), .handler = std::bind(&odin_endpoint::card, this, std::placeholders::_1), .asynchronous = true });
-    config.add_endpoint(kana::endpoint{
-      .method = GET, .path = std::regex("/__server/\\!component/request-list.*"), .handler = std::bind(&odin_endpoint::request_list, this, std::placeholders::_1), .asynchronous = true });
-}
-
 std::string
 body_(const std::string &inner) {
     return std::format(R"(
@@ -157,7 +154,7 @@ body_(const std::string &inner) {
 }
 
 http_response
-odin_endpoint::index(http_request &request) {
+odin::index(http_request &request, path::result) {
     std::string      content;
     return http_response(http_status_code::eOk, body_(R"(
 <h1>Admin Panel</h1>
@@ -196,7 +193,7 @@ render(const std::string_view &templateStr, const std::unordered_map<std::string
 }
 
 http_response
-odin_endpoint::css(http_request &request) {
+odin::css(http_request &request, path::result) {
     http_response response(http_status_code::eOk, std::string(DEFAULT_CSS));
     response.set_header("Content-Type", "text/css");
     return response;
@@ -231,7 +228,7 @@ serialize_odin_request(const odin_http_request &r) {
 }
 
 http_response
-odin_endpoint::card(http_request &request) {
+odin::card(http_request &request, path::result) {
     auto metrics = request.query().get<std::vector<std::string>>("metric");
     if (!metrics.has_value() || (metrics.has_value() && metrics->size() < 1))
         return http_response(http_status_code::eBadRequest, "");
@@ -249,7 +246,7 @@ odin_endpoint::card(http_request &request) {
     for (const std::string &metric : metrics.value()) {
         if (metric == "P99") {
             if (!percentile)
-                percentile = odin->calculate_percentiles();
+                percentile = calculate_percentiles();
             output_ += render(template_,
                               {
                                 { "name", "99th Percentile" },
@@ -257,26 +254,26 @@ odin_endpoint::card(http_request &request) {
                                 {"explanation", "The sample size for percentiles is the most recent 32768 requests."}});
         } else if (metric == "P90") {
             if (!percentile)
-                percentile = odin->calculate_percentiles();
+                percentile = calculate_percentiles();
             output_ += render(template_, { { "name", "90th Percentile" }, { "value", std::format("{}ms", percentile->p90) }, {"explanation", "The sample size for percentiles is the most recent 32768 requests."} });
         } else if (metric == "P75") {
             if (!percentile)
-                percentile = odin->calculate_percentiles();
+                percentile = calculate_percentiles();
             output_ += render(template_, { { "name", "75th Percentile" }, { "value", std::format("{}ms", percentile->p75) }, {"explanation", "The sample size for percentiles is the most recent 32768 requests."} });
         } else if (metric == "P50") {
             if (!percentile)
-                percentile = odin->calculate_percentiles();
+                percentile = calculate_percentiles();
             output_ += render(template_, { { "name", "50th Percentile" }, { "value", std::format("{}ms", percentile->p50) }, {"explanation", "The sample size for percentiles is the most recent 32768 requests."} });
         } else if (metric == "RPS") {
-            output_ += render(template_, { { "name", "RPS" }, { "value", std::format("{}", odin->rps_.load()) }, {"explanation", "Requests per second"} });
+            output_ += render(template_, { { "name", "RPS" }, { "value", std::format("{}", rps_.load()) }, {"explanation", "Requests per second"} });
         } else if (metric == "total_served") {
-            output_ += render(template_, { { "name", "Total Requests" }, { "value", std::format("{}", odin->requests_served_.load()) }, {"explanation", "Requests since server start"} });
+            output_ += render(template_, { { "name", "Total Requests" }, { "value", std::format("{}", requests_served_.load()) }, {"explanation", "Requests since server start"} });
         } else if (metric == "2xx") {
-            output_ += render(template_, { { "name", "OK" }, { "value", std::format("{}", odin->status_code_.ok.load()) }, {"explanation", "Responses sent with status code 200-299"}});
+            output_ += render(template_, { { "name", "OK" }, { "value", std::format("{}", status_code_.ok.load()) }, {"explanation", "Responses sent with status code 200-299"}});
         } else if (metric == "4xx") {
-            output_ += render(template_, { { "name", "Client Error" }, { "value", std::format("{}", odin->status_code_.client_error.load()) }, {"explanation", "Responses sent with status code 400-499"} });
+            output_ += render(template_, { { "name", "Client Error" }, { "value", std::format("{}", status_code_.client_error.load()) }, {"explanation", "Responses sent with status code 400-499"} });
         } else if (metric == "5xx") {
-            output_ += render(template_, { { "name", "Server Error" }, { "value", std::format("{}", odin->status_code_.server_error.load()) }, {"explanation", "Responses sent with status code 500-599"} });
+            output_ += render(template_, { { "name", "Server Error" }, { "value", std::format("{}", status_code_.server_error.load()) }, {"explanation", "Responses sent with status code 500-599"} });
         }
     }
 
@@ -286,14 +283,14 @@ odin_endpoint::card(http_request &request) {
 }
 
 http_response
-odin_endpoint::request_list(http_request &request) {
+odin::request_list(http_request &request, path::result) {
     size_t num = request.query().get<size_t>("num").value_or(20);
 
     std::string body = "";
     {
-        std::lock_guard<std::mutex> lock(odin->ring_buffer_mtx_);
-        for (size_t i = 0; i < std::min(num, odin->ring_buffer_.size()); ++i) {
-            body += serialize_odin_request(odin->ring_buffer_[i]);
+        std::lock_guard<std::mutex> lock(ring_buffer_mtx_);
+        for (size_t i = 0; i < std::min(num, ring_buffer_.size()); ++i) {
+            body += serialize_odin_request(ring_buffer_[i]);
         }
     }
 

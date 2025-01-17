@@ -24,11 +24,11 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
     auto                            pos = payload.cbegin();
     ssize_t                         len = 0;
 
-    std::print("-------------------------\n");
-    for (std::byte &byte : payload) {
-        std::print("\\x{:02x}", static_cast<uint8_t>(byte));
-    }
-    std::print("\n");
+    // std::print("-------------------------\n");
+    // for (std::byte &byte : payload) {
+    //     std::print("\\x{:02x}", static_cast<uint8_t>(byte));
+    // }
+    // std::print("\n");
 
     try {
         while (pos != payload.cend()) {
@@ -170,7 +170,6 @@ parser<h2::hpack>::header_by_index(uint32_t index) {
 
     index -= h2::hpack::STATIC_HEADER_TABLE.size();
     index -= 1;
-    std::print("Looking for index {} (#{})\n", index, header_map_.size());
     if (index < header_map_.size())
         return &header_map_[index];
     // Indices strictly greater than the sum of the lengths of both tables
@@ -292,7 +291,6 @@ serializer<h2::hpack>::finish(uint32_t stream_id) {
     };
     // clang-format on
 }
-
 
 
 // clang-format off

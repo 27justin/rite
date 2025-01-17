@@ -14,6 +14,9 @@
 #include <iomanip>
 #include <iostream>
 
+#include <netdb.h>
+#include <netinet/in.h>
+
 // Frame specific implementations
 #include "protocols/h2/headers.hpp"
 
@@ -28,26 +31,19 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
     if (unfinished_frame_.has_value()) {
         // Continue parsing a frame that wasn't complete in the last packet received
         frame_ = std::move(*unfinished_frame_);
-        // std::print("H2[read_frame]: Continue parsing unfinished frame\n");
     } else {
         if (data.size() - std::distance(data.begin(), position) < HTTP2_FRAME_SIZE) {
-            // std::print("H2[read_frame]: Remaining data is too little to form a HTTP2 frame ({}b)\n", (data.end() - position));
             return std::unexpected(h2::frame_state::eInvalid);
         }
         if (frame_.unpack(data.subspan(std::distance(data.begin(), position), HTTP2_FRAME_SIZE)) != true) {
-            // std::print("H2[read_frame]: Failed to unpack frame\n");
             return std::unexpected(h2::frame_state::eInvalid);
-        } else {
-            // std::print("H2[read_frame|debug]: Unpacked frame, ty:{:2x}, sz:{}, id:{}, flags:{}\n", (uint8_t)frame_.type, frame_.length, frame_.stream_identifier, frame_.flags);
         }
 
         if (frame_.length > MAX_FRAME_SIZE) {
-            // std::print("H2[read_frame]: Frame length exceeds MAX_FRAME_SIZE: {} KiB / (max) {} KiB\n", frame_.length / 1024, MAX_FRAME_SIZE / 1024);
             return std::unexpected(h2::frame_state::eTooBig);
         }
-        // std::print("H2[read_frame]: Reserving heap space of {} b\n", frame_.length);
-        // // Read data
-        // frame_.data.reserve(frame_.length);
+        // Read data
+        frame_.data.reserve(frame_.length);
 
         // Advance the iterator forwards
         position += HTTP2_FRAME_SIZE;
@@ -57,7 +53,6 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
 
     // Start accumulating remaining data we have available.
     size_t remaining = data.size() - std::distance(data.begin(), position);
-    // std::print("H2[read_frame]: Have remaining data: {}\n", remaining);
 
     std::span binary(position, std::min(remaining, frame_.length - frame_.data.size()));
     frame_.data.insert(frame_.data.end(), binary.data(), binary.data() + binary.size());
@@ -65,20 +60,19 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
 
     if (frame_.data.size() < frame_.length) {
         // Wait for next wake-up to continue parsing
-        // std::print("H2[read_frame]: Insufficient data for length: {}, have {}, waiting for next wakeup.\n", frame_.length, frame_.data.size());
         unfinished_frame_.emplace(std::move(frame_));
         return std::unexpected(h2::frame_state::eInsufficientData);
     }
-    // std::print("H2[read_frame]: Finished frame ty:{}, sz:{} ({})\n", (uint8_t)frame_.type, frame_.length, frame_.data.size());
 
     // Frame is now finished
     unfinished_frame_.reset();
     return frame_;
 }
 
-void
+std::optional<http_request>
 connection<h2::protocol>::process(std::span<std::byte> span) {
     auto pos = span.begin();
+    std::optional<http_request> rval = std::nullopt;
 start:
     switch (state_) {
         case CLIENT_PREFACE: {
@@ -123,12 +117,6 @@ start:
                 terminate();
             }
 
-            // std::print("H2[WAIT_CLIENT_SETTINGS]: Received frame: ty:{:2x}, sz:{}, id:{}, flags:{}\n",
-            //            (uint8_t)settings->type,
-            //            (uint32_t)settings->length,
-            //            (uint32_t)settings->stream_identifier,
-            //            (uint8_t)settings->flags);
-
             /*
               The server connection preface consists of a potentially empty
               SETTINGS frame (Section 6.5) that MUST be the first frame the server
@@ -141,7 +129,6 @@ start:
 
             // Send our preface (our settings)
             h2::frame response{ .length = 0, .type = h2::frame::type::SETTINGS, .flags = 0, .stream_identifier = 0x0 };
-            std::print("    Sending our own settings to client\n");
             write(response);
 
             /*
@@ -162,7 +149,6 @@ start:
                 goto out;
             }
 
-            std::print("H2[process]: Received data in idle state\n");
             switch (frame->type) {
             case h2::frame::type::SETTINGS: {
                 // Client likely acknowledged our settings.
@@ -173,15 +159,31 @@ start:
                 }
                 break;
             }
+            case h2::frame::type::PING: {
+                // Send PING+ACK
+                h2::frame ack {
+                    .length = 8, // PING mandates 8 bytes of opaque
+                                 // data
+                    .type = h2::frame::type::PING,
+                    .flags = h2::frame::characteristics<h2::frame::type::PING>::ACK,
+                    .stream_identifier = frame->stream_identifier,
+                    .data = std::vector<std::byte>(8)
+                };
+                write(ack);
+                break;
+            }
             case h2::frame::type::WINDOW_UPDATE: {
                 // Flow control:
-                // We do not support flow control /yet/. I may add this in the future
+                // TODO: We do not support flow control /yet/. I may add this in the future
                 break;
             }
             case h2::frame::type::CONTINUATION:
                 __attribute__((fallthrough));
             case h2::frame::type::HEADERS: {
-                std::print("Received HEADER or CONTINUATION frame\n");
+                // Automatically provisions the steam ID for us,
+                streams_[frame->stream_identifier]
+                    .state = h2::stream::open;
+
                 auto result = parameters_->hpack.rx.parse(*frame);
                 switch (result) {
                 case h2::hpack::error::eUnknownHeader: {
@@ -198,35 +200,54 @@ start:
                     break;
                 }
                 case h2::hpack::error::eDone: {
+                    // Transition stream to half-closed (remote won't
+                    // send any more data.)
+                    streams_[frame->stream_identifier]
+                        .state = h2::stream::half_closed;
+
                     // Print out the headers
                     auto headers = parameters_->hpack.rx.result();
-                    // for (auto const &[k, v] : headers) {
-                    // std::print("{}: {}\n", k, v);
-                    // }
-
-                    // Generate a dummy response
-                    std::vector<h2::hpack::header> response_headers = {
-                        h2::hpack::header{ .key = ":status", .value = "302" },
-                        h2::hpack::header{"cache-control", "private"},
-                        h2::hpack::header{ .key = "content-type", .value = "text/html; charset=UTF-8" },
-                        h2::hpack::header{ .key = "server", .value = "WIP-CPP/0.1.1" },
-                        h2::hpack::header{"content-length", "12"}
+                    auto get_header = [&headers](std::string key){
+                        return std::find_if(headers.cbegin(), headers.cend(), [&key](const h2::hpack::header &h){ return h.key == key; });
                     };
-                    parameters_->hpack.tx.serialize(response_headers);
-                    h2::frame response = parameters_->hpack.tx.finish(frame->stream_identifier);
-                    write(response);
 
-                    h2::frame dummy = {
-                        .length = 12,
-                        .flags = h2::frame::characteristics<h2::frame::DATA>::END_STREAM,
-                        .stream_identifier = frame->stream_identifier,
-                        .data = {}
-                    };
-                    const char DUMMY_RESPONSE[] = "Hello, world!";
-                    dummy.data.insert(dummy.data.begin(), (std::byte *) DUMMY_RESPONSE, (std::byte *) DUMMY_RESPONSE + sizeof(DUMMY_RESPONSE));
-                    write(dummy);
+                    rval = http_request();
+                    rval->path_ = (*get_header(":path")).value;
 
-                    std::print("Sent out frame with stream ID 3\n");
+                    // Set the method
+                    auto method_str = (*get_header(":method")).value;
+                    if (method_str == "GET") {
+                        rval->method_ = http_method::GET;
+                    } else if (method_str == "HEAD") {
+                        rval->method_ = http_method::HEAD;
+                    } else if (method_str == "POST") {
+                        rval->method_ = http_method::POST;
+                    } else if (method_str == "PUT") {
+                        rval->method_ = http_method::PUT;
+                    } else if (method_str == "DELETE") {
+                        rval->method_ = http_method::DELETE;
+                    } else if (method_str == "CONNECT") {
+                        rval->method_ = http_method::CONNECT;
+                    } else if (method_str == "OPTIONS") {
+                        rval->method_ = http_method::OPTIONS;
+                    } else if (method_str == "TRACE") {
+                        rval->method_ = http_method::TRACE;
+                    } else if (method_str == "PATCH") {
+                        rval->method_ = http_method::PATCH;
+                    }
+
+                    for (auto const &header : headers) {
+                        rval->headers_[header.key] = header.value;
+                    }
+                    rval->version_ = http_version::HTTP_2_0;
+
+                    if (rval->path_.find('?') != std::string::npos) {
+                        query_parameters query = parser<query_parameters>{}.parse(rval->path_).value();
+                        rval->query_ = query;
+                    }
+
+                    rval->set_context<h2::stream_id>(uint32_t(frame->stream_identifier));
+                    rval->client_ = this;
                     break;
                 }
                 }
@@ -253,6 +274,7 @@ start:
     }
 out:
     lock_.unlock();
+    return rval;
 }
 
 int

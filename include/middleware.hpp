@@ -5,7 +5,7 @@
 
 #include <functional>
 
-namespace kana {
+namespace rite {
 class middleware {
 public:
     virtual ~middleware() = default;

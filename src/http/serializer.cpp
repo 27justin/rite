@@ -43,17 +43,17 @@ serializer<http_response>::operator()(const http_response &response) const {
 }
 
 std::string_view
-serializer<kana::protocol>::operator()(const kana::protocol &proto) const {
+serializer<rite::protocol>::operator()(const rite::protocol &proto) const {
     static const char QUIC[] = "quic";
     static const char HTTP[] = "http";
     static const char HTTPS[] = "https";
 
     switch (proto) {
-        case kana::protocol::http:
+        case rite::protocol::http:
             return std::string_view(HTTP);
-        case kana::protocol::https:
+        case rite::protocol::https:
             return std::string_view(HTTPS);
-        case kana::protocol::quic:
+        case rite::protocol::quic:
             return std::string_view(QUIC);
     }
     return std::string_view("exhaustive check failed");
