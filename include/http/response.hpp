@@ -14,7 +14,7 @@
 #include "buffer.hpp"
 
 template<typename T>
-class serializer;
+struct serializer;
 
 struct http_response {
     public:
@@ -38,7 +38,7 @@ struct http_response {
     std::map<event, std::function<void(http_response &)>> events_;
     std::unordered_map<size_t, std::any>                  context_;
 
-    friend class serializer<http_response>;
+    friend struct serializer<http_response>;
 
     public:
     std::shared_ptr<jt::mpsc<rite::buffer, jt::fifo>> channel;

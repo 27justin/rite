@@ -16,7 +16,7 @@ struct protocol {};
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 static int
-alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg) {
+alpn_select_cb(SSL *, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *) {
     // Check the incoming protocols
     const unsigned char *protocol = NULL;
     unsigned int         protocol_len = 0;

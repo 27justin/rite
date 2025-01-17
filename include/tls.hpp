@@ -33,7 +33,7 @@ class connection<tls> : public connection<void> {
 
     SSL *ssl() { return ssl_; }
 
-    ssize_t read(std::span<std::byte> where, int flags) { return SSL_read(ssl_, where.data(), where.size_bytes()); }
+    ssize_t read(std::span<std::byte> where, int) { return SSL_read(ssl_, where.data(), where.size_bytes()); }
 
-    ssize_t write(std::span<const std::byte> what, int flags) { return SSL_write(ssl_, what.data(), what.size_bytes()); }
+    ssize_t write(std::span<const std::byte> what, int) { return SSL_write(ssl_, what.data(), what.size_bytes()); }
 };

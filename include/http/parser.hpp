@@ -13,7 +13,7 @@ template<typename T>
 struct parser;
 
 template<typename T>
-struct connection;
+class connection;
 
 std::string
 decode_uri_component(const std::string &encoded);

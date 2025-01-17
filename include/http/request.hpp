@@ -18,7 +18,7 @@
 #include "version.hpp"
 
 template<typename T>
-class parser;
+struct parser;
 
 struct http_request {
     public:
@@ -34,7 +34,7 @@ struct http_request {
     connection<void> *client_;
     // sockfd          client_;
 
-    friend class parser<http_request>;
+    friend struct parser<http_request>;
 
     public:
     int socket() const { return client_->socket(); }

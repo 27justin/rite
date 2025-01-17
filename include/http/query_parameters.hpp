@@ -8,7 +8,7 @@
 #include <vector>
 
 template<typename T>
-class parser;
+struct parser;
 
 template<typename T>
 struct pluggable;
@@ -26,7 +26,7 @@ struct pluggable {
 class query_parameters {
     std::vector<std::pair<std::string, std::string>> parameters_;
 
-    friend class parser<query_parameters>;
+    friend struct parser<query_parameters>;
 
     public:
     template<typename T>
