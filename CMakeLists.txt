@@ -44,6 +44,8 @@ if(${RITE_BUILD_TESTS})
   file(GLOB rite_TESTS test/*.cpp)
   add_executable(rite-test ${rite_TESTS})
   target_link_libraries(rite-test GTest::gtest_main)
+  target_link_libraries(rite-test rite)
+  target_include_directories(rite-test PRIVATE include)
 
   include(GoogleTest)
   gtest_discover_tests(rite-test)

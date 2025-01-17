@@ -189,6 +189,10 @@ start:
                             // TODO: throw decoding error and (probably) terminate the connection
                             break;
                         }
+                        case h2::hpack::error::eInvalid: {
+                            terminate();
+                            return std::nullopt;
+                        }
                         case h2::hpack::error::eSizeUpdate: {
                             // This warrants an ACK to the client
                             write(h2::frame{ .length = 0, .type = h2::frame::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .data = {} });

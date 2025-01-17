@@ -23,6 +23,10 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
 
     try {
         while (pos != payload.cend()) {
+            // Infinite loop detection. If pos doesn't move within the body,
+            // our payload is trash.
+            auto _begin = pos;
+
             // First check for category: Literal Header without Indexing
             uint8_t start = static_cast<uint8_t>(*pos);
 
@@ -85,6 +89,9 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
                 decoded_.push_back(h2::hpack::header{ key, value });
             }
         next:
+            if (pos == _begin) {
+                throw h2::hpack::error::eInvalid;
+            }
             continue;
         }
         return frame.flags & (h2::payload<h2::frame::HEADERS>::flags::END_HEADERS | h2::payload<h2::frame::HEADERS>::flags::END_STREAM) ? h2::hpack::error::eDone : h2::hpack::error::eMore;
@@ -109,7 +116,7 @@ parser<h2::hpack>::parse_string(std::span<std::byte>::const_iterator &pos, std::
     pos += len;
 
     if ((pos + length) > payload.cend())
-        throw std::runtime_error("Malformed HPACK string");
+        throw h2::hpack::error::eInvalid;
 
     // Read `length` bytes as the string starting from `pos`
     std::string raw((const char *)&(*pos), length);

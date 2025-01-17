@@ -151,7 +151,7 @@ rite::server<T>::operator()() {
                     connections_[next_idx] = con;
 
                     ev.data.u64 = next_idx;
-                    std::thread(std::bind(&server::connection_sentinel, this, std::placeholders::_1, std::placeholders::_2), next_idx, this).detach();
+                    // std::thread(std::bind(&server::connection_sentinel, this, std::placeholders::_1, std::placeholders::_2), next_idx, this).detach();
                 }
                 // Add client socket epoll set
                 if (epoll_ctl(fd.epoll, EPOLL_CTL_ADD, client_socket, &ev) == -1) {

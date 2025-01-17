@@ -19,7 +19,7 @@ struct hpack {
     struct header {
         std::string key, value;
     };
-    enum class error { eUnknownHeader, eSizeUpdate, eDone, eMore };
+    enum class error { eUnknownHeader, eSizeUpdate, eInvalid, eDone, eMore };
 
     /*
       The dynamic table consists of a list of header fields maintained in
