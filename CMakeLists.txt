@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-
 project(rite CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 file(GLOB rite_SOURCES src/*.cpp src/http/*.cpp src/protocols/h2/*.cpp src/servers/*.cpp)
 
