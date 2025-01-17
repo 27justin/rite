@@ -18,49 +18,51 @@
 #include <runtime.hpp>
 #include <server.hpp>
 
-constexpr char BASE[] = "/mnt/SSD-2/";
-constexpr char STATIC_IMAGES[] = "Torrents";
-
 int
 main() {
     rite::runtime *runtime = new rite::runtime();
     runtime->worker_threads(8);
 
-    rite::http::endpoint image = rite::http::endpoint{ .method = http_method::GET,
-                                                       .path = rite::http::path("/{file:.*}"),
-                                                       .handler = [](http_request &request, rite::http::path::result mapping) -> http_response {
-                                                           using path = std::filesystem::path;
-                                                           auto file_path = mapping.get<std::string>("file");
-                                                           path file = std::filesystem::path(*file_path);
+    // clang-format off
+    rite::http::endpoint image {
+        .method = http_method::GET,
+        .path = rite::http::path("/{file:.*}"),
+        .handler = [](http_request &request, rite::http::path::result mapping) -> http_response {
+            using path = std::filesystem::path;
+            auto file_path = mapping.get<std::string>("file");
+            path file = std::filesystem::path(*file_path);
 
-                                                           if (std::filesystem::exists(file)) {
-                                                               http_response response{};
-                                                               response.set_status_code(http_status_code::eOk);
+            if (std::filesystem::exists(file)) {
+                http_response response{};
+                response.set_status_code(http_status_code::eOk);
 
-                                                               request.set_context<std::FILE *>(std::fopen(file.c_str(), "rb"));
-                                                               response.set_header("Content-Type", "text/plain");
-                                                               response.set_content_length(std::filesystem::file_size(file));
+                request.set_context<std::FILE *>(std::fopen(file.c_str(), "rb"));
+                response.set_header("Content-Type", "text/plain");
+                response.set_content_length(std::filesystem::file_size(file));
 
-                                                               response.event(http_response::event::chunk, [&](http_response &response) {
-                                                                   std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(16384);
+                response.event(http_response::event::chunk, [&](http_response &response) {
+                    std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(16384);
 
-                                                                   auto &fstream = request.context<std::FILE *>().value().get();
-                                                                   auto  num = std::fread((void *)buffer.get(), 1, 16384, fstream);
+                    auto &fstream = request.context<std::FILE *>().value().get();
+                    auto  num = std::fread((void *)buffer.get(), 1, 16384, fstream);
 
-                                                                   rite::buffer buf(std::move(buffer), num, num < 16384);
-                                                                   if (num < 16384) {
-                                                                       std::fclose(fstream);
-                                                                   }
-                                                                   response.stream(std::move(buf));
-                                                               });
+                    rite::buffer buf(std::move(buffer), num, num < 16384);
+                    if (num < 16384) {
+                        std::fclose(fstream);
+                    }
+                    response.stream(std::move(buf));
+                });
 
-                                                               return response;
-                                                           } else {
-                                                               std::cerr << "Tried to access file: " << file << std::endl;
-                                                               return http_response(http_status_code::eNotFound, "File could not be found.");
-                                                           }
-                                                       },
-                                                       .asynchronous = true };
+                return response;
+            } else {
+                std::cerr << "Tried to access file: " << file << std::endl;
+                return http_response(http_status_code::eNotFound, "File could not be found.");
+            }
+        },
+        // Handler & response sending spawns in a separate thread.
+        .asynchronous = true
+    };
+    // clang-format on
 
     // A layer represents the default behaviour of the server.
     // The default `layer` that we expose is a very simple
@@ -83,8 +85,8 @@ main() {
 
     rite::server<https>::config https_config = rite::server<https>::config();
     https_config
-        .private_key_file("private.pem")
-        .certificate_file("cert.crt")
+        .private_key_file("key.pem")
+        .certificate_file("cert.pem")
         .behaviour(lyr)
         .ip(INADDR_ANY)
         .port(2003)

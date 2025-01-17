@@ -122,7 +122,7 @@ struct parser<h2::hpack> {
     // Throws an exception if a previous `parse` call did not return
     // h2::hpack::error::eDone.  Also moves away the headers, further
     // access will cause an exception to be raised.
-    // TODO: Not implemented yet.
+    // TODO: The above exception is not implemented yet.
     h2::hpack::headers &&result();
 };
 

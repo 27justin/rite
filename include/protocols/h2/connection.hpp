@@ -14,10 +14,21 @@ struct parameters {
         serializer<h2::hpack> tx;
     } hpack;
 };
+
+struct stream {
+    enum stream_state { idle, open, reserved, half_closed, closed };
+    stream_state           state;
+    h2::stream_id          stream_id;
+    h2::hpack::headers     headers;
+    std::vector<std::byte> data;
+};
 }
 
 template<>
 class connection<h2::protocol> : public connection<tls> {
+    private:
+    http_request finish_stream(h2::stream &stream);
+
     public:
     enum connection_state {
         CLIENT_PREFACE,
@@ -29,17 +40,12 @@ class connection<h2::protocol> : public connection<tls> {
         HC_REMOTE
     };
 
-    // h2::compression compress_;
-    // 31 bits are used, when wrapping around we should return to 2
-    // std::atomic<int32_t> next_stream_identifier = 2;
-
     connection_state         state_;
     std::optional<h2::frame> unfinished_frame_;
 
     public:
     std::unique_ptr<h2::parameters> parameters_;
-
-    std::map<uint32_t, h2::stream> streams_;
+    std::map<uint32_t, h2::stream>  streams_;
 
     connection(connection<tls> &&channel)
       : connection<tls>(std::move(channel))

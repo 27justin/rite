@@ -149,6 +149,8 @@ start:
                 goto out;
             }
 
+            streams_[frame->stream_identifier].stream_id = frame->stream_identifier;
+
             switch (frame->type) {
                 case h2::frame::type::SETTINGS: {
                     // Client likely acknowledged our settings.
@@ -197,60 +199,42 @@ start:
                             break;
                         }
                         case h2::hpack::error::eDone: {
-                            // Transition stream to half-closed (remote won't
-                            // send any more data.)
+                            // Save the headers for later (until after request body, or now if END_STREAM is set.)
+                            auto &headers = streams_[frame->stream_identifier].headers;
+                            headers = std::move(parameters_->hpack.rx.result());
+
+                            if ((frame->flags & h2::frame::characteristics<h2::frame::HEADERS>::END_STREAM) == 0) {
+                                // Remote will send a request body. We'll have to wait for that.
+                                std::print("H2[handle]: Missing END_STREAM, waiting for data...\n");
+                                goto start;
+                            }
+                            // Otherwise transition stream to
+                            // half-closed (remote won't send any more
+                            // data.)
                             streams_[frame->stream_identifier].state = h2::stream::half_closed;
-
-                            // Print out the headers
-                            auto headers = parameters_->hpack.rx.result();
-                            auto get_header = [&headers](std::string key) {
-                                return std::find_if(headers.cbegin(), headers.cend(), [&key](const h2::hpack::header &h) { return h.key == key; });
-                            };
-
-                            rval = http_request();
-                            rval->path_ = (*get_header(":path")).value;
-
-                            // Set the method
-                            auto method_str = (*get_header(":method")).value;
-                            if (method_str == "GET") {
-                                rval->method_ = http_method::GET;
-                            } else if (method_str == "HEAD") {
-                                rval->method_ = http_method::HEAD;
-                            } else if (method_str == "POST") {
-                                rval->method_ = http_method::POST;
-                            } else if (method_str == "PUT") {
-                                rval->method_ = http_method::PUT;
-                            } else if (method_str == "DELETE") {
-                                rval->method_ = http_method::DELETE;
-                            } else if (method_str == "CONNECT") {
-                                rval->method_ = http_method::CONNECT;
-                            } else if (method_str == "OPTIONS") {
-                                rval->method_ = http_method::OPTIONS;
-                            } else if (method_str == "TRACE") {
-                                rval->method_ = http_method::TRACE;
-                            } else if (method_str == "PATCH") {
-                                rval->method_ = http_method::PATCH;
-                            }
-
-                            for (auto const &header : headers) {
-                                rval->headers_[header.key] = header.value;
-                            }
-                            rval->version_ = http_version::HTTP_2_0;
-
-                            if (rval->path_.find('?') != std::string::npos) {
-                                query_parameters query = parser<query_parameters>{}.parse(rval->path_).value();
-                                rval->query_ = query;
-                            }
-
-                            rval->set_context<h2::stream_id>(uint32_t(frame->stream_identifier));
-                            rval->client_ = this;
+                            // Consumes the actual headers to produce a request.
+                            rval = finish_stream(streams_[frame->stream_identifier]);
                             break;
                         }
                     }
                     break;
                 }
                 case h2::frame::type::DATA: {
-                    __attribute__((fallthrough));
+                    // Requires an active stream that has headers.
+                    if (!streams_.contains(frame->stream_identifier)) {
+                        std::print("Terminating HTTP/2 connection. Client sent data on non-existant stream.\n");
+                        terminate();
+                        goto out;
+                    }
+
+                    auto &stream = streams_[frame->stream_identifier];
+                    stream.data.insert(stream.data.end(), frame->data.begin(), frame->data.end());
+
+                    if ((frame->flags & h2::frame::characteristics<h2::frame::DATA>::END_STREAM) != 0) {
+                        // Handle the request, we parsed it's body.
+                        rval = finish_stream(streams_[frame->stream_identifier]);
+                    }
+                    break;
                 }
                 default: {
                     std::print("H2[process]: Received unsupported frame during idle {}\n", (uint8_t)frame->type);
@@ -292,4 +276,56 @@ connection<h2::protocol>::terminate() {
       preface indicates that the peer is not using HTTP/2.
     */
     close();
+}
+
+http_request
+connection<h2::protocol>::finish_stream(h2::stream &stream) {
+    auto get_header = [&stream](std::string key) {
+        return std::find_if(stream.headers.cbegin(), stream.headers.cend(), [&key](const h2::hpack::header &h) { return h.key == key; });
+    };
+
+    http_request rval{};
+    rval.path_ = (*get_header(":path")).value;
+
+    // Set the method
+    auto method_str = (*get_header(":method")).value;
+    if (method_str == "GET") {
+        rval.method_ = http_method::GET;
+    } else if (method_str == "HEAD") {
+        rval.method_ = http_method::HEAD;
+    } else if (method_str == "POST") {
+        rval.method_ = http_method::POST;
+    } else if (method_str == "PUT") {
+        rval.method_ = http_method::PUT;
+    } else if (method_str == "DELETE") {
+        rval.method_ = http_method::DELETE;
+    } else if (method_str == "CONNECT") {
+        rval.method_ = http_method::CONNECT;
+    } else if (method_str == "OPTIONS") {
+        rval.method_ = http_method::OPTIONS;
+    } else if (method_str == "TRACE") {
+        rval.method_ = http_method::TRACE;
+    } else if (method_str == "PATCH") {
+        rval.method_ = http_method::PATCH;
+    }
+
+    for (auto const &header : stream.headers) {
+        // TODO: Headers are not unique.
+        rval.headers_[header.key] = header.value;
+    }
+
+    rval.version_ = http_version::HTTP_2_0;
+
+    if (rval.path_.find('?') != std::string::npos) {
+        query_parameters query = parser<query_parameters>{}.parse(rval.path_).value();
+        rval.query_ = query;
+    }
+
+    rval.set_context<h2::stream_id>(h2::stream_id(stream.stream_id));
+    rval.client_ = this;
+    rval.body_ = std::move(stream.data);
+
+    // Clean up our memory.
+    stream.data.clear();
+    return rval;
 }

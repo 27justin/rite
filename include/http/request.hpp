@@ -69,5 +69,7 @@ struct http_request {
         return std::nullopt;
     }
 
+    const std::vector<std::byte> &body() const { return body_; }
+
     query_parameters &query() { return query_; }
 };

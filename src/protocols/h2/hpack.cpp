@@ -108,7 +108,7 @@ parser<h2::hpack>::parse_string(std::span<std::byte>::const_iterator &pos, std::
     // Skip the `Value Length`
     pos += len;
 
-    if ((pos + length) < payload.cend())
+    if ((pos + length) > payload.cend())
         throw std::runtime_error("Malformed HPACK string");
 
     // Read `length` bytes as the string starting from `pos`

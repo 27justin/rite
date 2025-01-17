@@ -34,6 +34,9 @@ class layer {
 
     std::pair<endpoint *, rite::http::path::result> find_endpoint(const http_request &request) {
         for (auto &endpoint : endpoints_) {
+            // Skip endpoints whose methods do not match our request.
+            if((endpoint.method & static_cast<int>(request.method())) == 0) continue;
+
             rite::http::path path = endpoint.path;
             auto             result = path.match(std::string(request.path()));
             if (result) {
@@ -58,6 +61,9 @@ class layer {
     /// serialization that can't be generically represented without
     /// blocking the worker thread.
     void handle(http_request &req, std::function<void(http_response &&)> &&finish) {
+        for (auto &ext : extensions_)
+            ext->on_request(req);
+
         rite::http::endpoint    *endpoint = nullptr;
         rite::http::path::result mapping;
         std::tie(endpoint, mapping) = find_endpoint(req);
@@ -76,9 +82,17 @@ class layer {
                 policy = std::launch::deferred;
             }
 
-            std::future<void> handler = std::async(policy, [finish, endpoint, mapping, req]() mutable {
+            std::future<void> handler = std::async(policy, [this, finish, endpoint, mapping, req]() mutable {
                 http_response response = endpoint->handler(req, mapping);
+                // TODO: This is not a nice design.
+                // but we definitely need the hooks...
+                for (auto &ext : extensions_)
+                    ext->pre_send(req, response);
+
                 finish(std::move(response));
+
+                for (auto &ext : extensions_)
+                    ext->post_send(req, response);
             });
 
             if (endpoint->thread_pool) {
@@ -92,21 +106,6 @@ class layer {
         } else {
             // not_found();
         }
-    }
-
-    void on_request(http_request &req) {
-        for (auto &ext : extensions_)
-            ext->on_request(req);
-    }
-
-    void pre_send(http_request &req, http_response &rsp) {
-        for (auto &ext : extensions_)
-            ext->pre_send(req, rsp);
-    }
-
-    void post_send(http_request &req, http_response &rsp) {
-        for (auto &ext : extensions_)
-            ext->post_send(req, rsp);
     }
 
     private:

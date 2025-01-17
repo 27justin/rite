@@ -165,9 +165,6 @@ rite::server<T>::operator()() {
                         std::cout << "Skipping dead client" << std::endl;
                         continue;
                     }
-                    // TODO: Check if connection is locked,
-                    // if it is, remove the EPOLLET behaviour
-                    // and retry adding the task to the thread pool.
 
                     client = reinterpret_cast<connection<void> *>(((uintptr_t)client) & ((~0ULL) >> 16));
                     client->take();

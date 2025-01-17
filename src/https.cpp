@@ -50,11 +50,11 @@ rite::server<https>::on_read(connection<void> *socket) {
             uint32_t                    stream_id = 0;
             std::optional<http_request> request = h2_sock->process(std::span<std::byte>(buffer.get(), bytes));
             if (request) {
-                config_.behaviour_->on_request(*request);
                 stream_id = request->context<h2::stream_id>().value();
 
                 // Take up a new reference for the handler
                 socket->take();
+
                 config_.behaviour_->handle(*request, [this, &request, h2_sock, stream_id](http_response &&response) {
                     std::vector<h2::hpack::header> headers_;
                     headers_.push_back(h2::hpack::header{ ":status", std::to_string(static_cast<int>(response.status_code())) });
@@ -63,7 +63,6 @@ rite::server<https>::on_read(connection<void> *socket) {
                     }
                     h2_sock->parameters_->hpack.tx.serialize(headers_);
                     auto preload = h2_sock->parameters_->hpack.tx.finish(stream_id);
-                    config_.behaviour_->pre_send(*request, response);
                     h2_sock->write(preload);
 
                     rite::buffer                            buf;
@@ -80,7 +79,7 @@ rite::server<https>::on_read(connection<void> *socket) {
                         frame.data = std::vector<std::byte>(buf.data.get(), buf.data.get() + buf.len);
                         h2_sock->write(frame);
                     } while (!buf.last);
-                    config_.behaviour_->post_send(*request, response);
+
                     // Release reference to allow the connection to drop
                     h2_sock->release();
                 });
