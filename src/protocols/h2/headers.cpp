@@ -28,13 +28,12 @@ h2::payload<h2::frame::HEADERS>::payload(const h2::frame &frame)
     auto end = frame.data.end();
     if (flags & h2::frame::characteristics<h2::frame::HEADERS>::PADDED) {
         // Pad lengh is present
-        std::print("HEADERS frame has PADDING\n");
         pad_length = static_cast<uint8_t>(*(pos++));
     }
 
+    // TODO: Not implemented yet.
     if (flags & h2::frame::characteristics<h2::frame::HEADERS>::PRIORITY) {
         // TODO: Custom parse error
-        std::print("HEADERS frame should be prioritized\n");
         if (end - pos < 4)
             throw h2::frame_state::eInvalid;
 

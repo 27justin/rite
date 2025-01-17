@@ -19,7 +19,6 @@ rite::server<https>::on_accept(connection<void>::native_handle socket, struct so
         // If alpn[0..2] == "h2", we move the TLS connection into
         // connection<h2>
         if (alpn_len >= 2 && memcmp(alpn, "h2", 2) == 0) {
-            std::print("Got H2 connection!\n");
             // Upgrade the connection to HTTP2
             auto *http2 = new ::connection<h2::protocol>(std::move(*connection));
             delete connection;
@@ -40,7 +39,6 @@ rite::server<https>::on_read(connection<void> *socket) {
     auto                                             lock = socket->lock();
     ssize_t                                          bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
     if (bytes < 1) {
-        std::print("Connection died.\n");
         socket->release();
         socket->close();
         return;

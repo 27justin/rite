@@ -60,7 +60,6 @@ class connection {
       , lock_() {}
 
     virtual ~connection() {
-        // std::print("Closing socket {}\n", socket_);
         if (socket_ != -1)
             ::close(socket_);
     };
@@ -91,7 +90,6 @@ class connection {
 
     void take() {
         refs_.fetch_add(1);
-        // std::print("Connection got adopted. {}\n", refs_.load());
         cv_.notify_all();
     }
     void release() {

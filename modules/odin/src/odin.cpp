@@ -20,7 +20,6 @@ namespace rite::extensions {
 odin::odin(odin_config config)
   : config_(config)
   , timings_(std::make_unique<odin_timing[]>(32768)) {
-    std::print("[かな::オーディン]: Initializing version {}\n", ODIN_VERSION);
 
     // Set up RPS thread
     std::thread rps([this]() {

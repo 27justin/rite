@@ -1,10 +1,7 @@
 #include "protocols/h2/hpack.hpp"
 #include "protocols/h2/headers.hpp"
 #include <algorithm>
-#include <bitset>
 #include <cstdint>
-#include <iomanip>
-#include <ios>
 #include <stdexcept>
 
 #include <iostream>
@@ -24,33 +21,22 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
     auto                            pos = payload.cbegin();
     ssize_t                         len = 0;
 
-    // std::print("-------------------------\n");
-    // for (std::byte &byte : payload) {
-    //     std::print("\\x{:02x}", static_cast<uint8_t>(byte));
-    // }
-    // std::print("\n");
-
     try {
         while (pos != payload.cend()) {
             // First check for category: Literal Header without Indexing
             uint8_t start = static_cast<uint8_t>(*pos);
-            // auto begin = pos;
 
             if (start & 0x80) { // Indexed
-                // std::print("{:02x} INDEXED\n", start);
                 auto index = h2::variable_integer<7>::decode(std::span<const std::byte>(pos, payload.cend()), len);
                 pos += len;
                 auto header = header_by_index(index);
-                // std::print("Emitting '{}' (indexed)\n", header->key);
                 decoded_.push_back(*header);
                 goto next;
             }
 
             if (start & 0x40) { // Literal indexed
-                // std::print("{:02x} LITERAL\n", start);
                 // 6-bit prefix index
                 auto index = h2::variable_integer<6>::decode(std::span<const std::byte>(pos, payload.cend()), len);
-                // std::print("vlen: {}\n", len);
                 pos += len;
 
                 std::string key, value;
@@ -61,18 +47,15 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
                 }
                 value = parse_string(pos, payload);
 
-                // std::print("Indexed '{}'\n", key);
                 decoded_.push_back(h2::hpack::header{ key, value });
                 header_map_.push_front(h2::hpack::header{ key, value });
                 goto next;
             }
 
             if (start & 0x20) { // Header table update
-                // std::print("{:02x} TABLE UPDATE\n", start);
                 // Dynamic Table Size Update
                 auto size = h2::variable_integer<5>::decode(std::span<const std::byte>(pos, payload.cend()), len);
                 pos += len;
-                // std::print("HPACK[parse]: dynamic table update to: {}\n", size);
 
                 if (size < header_map_.size()) {
                     while (header_map_.size() > size) {
@@ -87,7 +70,6 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
             }
 
             {
-                // std::print("{:02x} NOTHING\n", start);
                 // Not indexed
                 // 4-bit prefix index
                 auto index = h2::variable_integer<4>::decode(std::span<const std::byte>(pos, payload.cend()), len);
@@ -99,30 +81,12 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
                 } else {
                     key = header_by_index(index)->key;
                 }
-                // std::print("Emitting '{}'\n", key);
                 value = parse_string(pos, payload);
-                // header_map_.push_front(h2::hpack::header { key, value });
                 decoded_.push_back(h2::hpack::header{ key, value });
             }
         next:
-            // auto sub = pos;
-            // std::print("=> ");
-            // for (; begin != sub; ++begin) {
-            // std::print("\\x{:02x}", static_cast<uint8_t>(*begin));
-            // }
-            // std::print("\n----------------\n");
-
             continue;
         }
-
-        // std::print("Current header indexing: \n");
-        // for (size_t i = 0; i < header_map_.size(); ++i) {
-        //     auto const &h = header_map_[i];
-        //     std::print("[{}] {}: {}\n", i, h.key, h.value);
-        // }
-        // std::print("----------------------------\n");
-
-        // std::print("Dynamic header size: {}\n", header_map_.size());
         return frame.flags & (h2::payload<h2::frame::HEADERS>::flags::END_HEADERS | h2::payload<h2::frame::HEADERS>::flags::END_STREAM) ? h2::hpack::error::eDone : h2::hpack::error::eMore;
     } catch (h2::hpack::error err) {
         return err;
@@ -143,6 +107,9 @@ parser<h2::hpack>::parse_string(std::span<std::byte>::const_iterator &pos, std::
     auto    length = h2::variable_integer<7>::decode(std::span<const std::byte>(pos, payload.cend()), len);
     // Skip the `Value Length`
     pos += len;
+
+    if ((pos + length) < payload.cend())
+        throw std::runtime_error("Malformed HPACK string");
 
     // Read `length` bytes as the string starting from `pos`
     std::string raw((const char *)&(*pos), length);
@@ -249,7 +216,6 @@ serializer<h2::hpack>::serialize(std::span<const h2::hpack::header> list) {
 
         if (std::holds_alternative<literal>(where)) {
             // Emit 1 byte header
-            std::print("Inserting literal header ({}: {})\n", header.key, header.value);
             std::vector<std::byte> wire = { static_cast<std::byte>(0b0000'0000) };
             payload.insert(payload.end(), wire.begin(), wire.end());
 

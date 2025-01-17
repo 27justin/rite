@@ -124,7 +124,6 @@ rite::server<T>::operator()() {
     std::unique_ptr<struct epoll_event[]> events = std::make_unique_for_overwrite<struct epoll_event[]>(base_config_.max_connections_);
     struct sockaddr_storage               client_address;
     socklen_t                             client_address_len = sizeof(client_address);
-    std::print("Server ready.\n");
     for (;;) {
         size_t ready = epoll_wait(fd.epoll, events.get(), base_config_.max_connections_, -1);
         for (size_t i = 0; i < ready; ++i) {
@@ -145,7 +144,6 @@ rite::server<T>::operator()() {
                         return (reinterpret_cast<uintptr_t>(ptr) & ((uintptr_t)1 << 63)) != 0;
                     });
                     if (next_it == connections_.end()) {
-                        std::print("Active indexes all taken up.\n");
                         delete con;
                         continue;
                     }
@@ -199,7 +197,6 @@ rite::server<T>::connection_sentinel(size_t connection_idx, rite::server<T> *ser
         if ((con->idle() && con->use_count() <= 0) || con->is_closed())
             break;
     }
-    std::print("Connection closed.\n");
     connections_[connection_idx] = (connection<void> *)((uintptr_t)con | (((uintptr_t)1) << 63));
     delete con;
 }
