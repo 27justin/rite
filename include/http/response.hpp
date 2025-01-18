@@ -10,6 +10,7 @@
 
 #include "header_map.hpp"
 #include "status_code.hpp"
+#include "pluggable.hpp"
 
 #include "buffer.hpp"
 
@@ -122,5 +123,29 @@ struct http_response {
             return std::nullopt;
         std::any &ref = context_[typeid(T).hash_code()];
         return std::any_cast<T &>(ref);
+    }
+
+    class cookie_jar {
+        http_response &response_;
+    public:
+        enum class error { eOk, eSerialization };
+
+        cookie_jar(http_response &response)
+            : response_(response) {}
+
+        template<typename T>
+        error set(const std::string &key, const T &t) {
+            try {
+                std::string serialized = pluggable<T>::serialize(t);
+                response_.headers_["set-cookie"] = std::format("{}={}", key, serialized);
+                return error::eOk;
+            } catch (...) {
+                return error::eSerialization;
+            }
+        }
+    };
+
+    cookie_jar cookies() {
+        return cookie_jar(*this);
     }
 };

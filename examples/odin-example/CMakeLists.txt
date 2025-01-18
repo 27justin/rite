@@ -6,5 +6,5 @@ add_executable(odin-example ${example_SOURCES})
 target_include_directories(odin-example PRIVATE include)
 
 target_link_libraries(odin-example PUBLIC rite)
-target_link_libraries(odin-example PUBLIC rite-odin)
+target_link_libraries(odin-example PUBLIC monitor)
 

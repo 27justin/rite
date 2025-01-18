@@ -6,5 +6,6 @@ add_executable(staticfile-example ${example_SOURCES})
 target_include_directories(staticfile-example PRIVATE include)
 
 target_link_libraries(staticfile-example PUBLIC rite)
+target_link_libraries(staticfile-example PUBLIC session)
 target_link_libraries(staticfile-example PUBLIC magic)
 

@@ -18,24 +18,41 @@
 #include <runtime.hpp>
 #include <server.hpp>
 
-#include <magic.h>
+#include <rite/session.hpp>
 
+#ifndef GITHUB_CI
+// GitHub CI runners do not have libmagic; provide a different implementation
+// for `guess_content_type` in this case.
+#include <magic.h>
 std::optional<std::string>
 guess_content_type(const std::filesystem::path &file) {
-    const char *mime;
+    const char *mime = nullptr;
     magic_t     magic;
 
     magic = magic_open(MAGIC_MIME_TYPE);
-    magic_load(magic, nullptr);
-    mime = magic_file(magic, file.c_str());
-
-    if (std::strlen(mime) == 0) {
+    if (magic_load(magic, nullptr) != 0) {
+        std::print("magic_load failed\n");
+        magic_close(magic);
         return std::nullopt;
     }
 
+    mime = magic_file(magic, file.c_str());
+    if (mime == nullptr) {
+        std::print("magic_file failed\n");
+        magic_close(magic);
+        return std::nullopt;
+    }
+
+    std::string mime_type(mime);
     magic_close(magic);
-    return mime;
+    return mime_type;
 }
+#else
+std::optional<std::string>
+guess_content_type(const std::filesystem::path &) {
+    return "application/octet-stream";
+}
+#endif
 
 int
 main() {
@@ -71,15 +88,21 @@ main() {
                 std::cout << "[" << buf << "]: access " << file.string() << '\n';
             }
 
-
             if (std::filesystem::exists(file)) {
                 http_response response{};
+
                 response.set_status_code(http_status_code::eOk);
 
                 request.set_context<std::FILE *>(std::fopen(file.c_str(), "rb"));
                 auto content_type = guess_content_type(file);
                 response.set_header("Content-Type", content_type.value_or("application/octet-stream"));
-                response.set_content_length(std::filesystem::file_size(file));
+
+                // This is only required for HTTP/1.1. HTTP/2 has a
+                // built in way to terminate streams without hinting
+                // at the length.
+                if(request.version_ == http_version::HTTP_1_1) {
+                    response.set_content_length(std::filesystem::file_size(file));
+                }
 
                 response.event(http_response::event::chunk, [&](http_response &response) {
                     std::unique_ptr<std::byte[]> buffer = std::make_unique_for_overwrite<std::byte[]>(16384);

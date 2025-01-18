@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
+#include <sstream>
 #include <string>
 #include <sys/socket.h>
 #include <vector>
+#include <expected>
 
 #include <any>
 #include <memory>
@@ -14,11 +15,14 @@
 #include "connection.hpp"
 #include "header_map.hpp"
 #include "method.hpp"
+#include "pluggable.hpp"
 #include "query_parameters.hpp"
 #include "version.hpp"
 
 template<typename T>
 struct parser;
+
+class cookie_jar;
 
 struct http_request {
     public:
@@ -26,6 +30,7 @@ struct http_request {
     query_parameters                     query_;
     http_method                          method_;
     std::vector<std::byte>               body_;
+    // TODO: This is bad! Headers are NOT unique!
     header_map                           headers_;
     std::unordered_map<size_t, std::any> context_;
     http_version                         version_;
@@ -69,7 +74,51 @@ struct http_request {
         return std::nullopt;
     }
 
-    const std::vector<std::byte> &body() const { return body_; }
+    // TODO: I think we need a better way to do this.
+    // Currently both http_request & *_response provide their own `cookie_jar`
+    // where the request's cookie_jar can only read, the response's can only set.
+    // Streamlining this into one class would be quite nice.
+    class cookie_jar {
+        std::unordered_map<std::string, std::string> cookies_;
+    public:
+        enum class error { eNotFound, eDeserialization };
 
+        cookie_jar(http_request &request) {
+            for (auto const &h : request.headers()) {
+                if (h.first == "cookie") {
+                    std::istringstream ss(h.second);
+                    std::string cookie;
+                    while (std::getline(ss, cookie, ';')) {
+                        std::istringstream inner(cookie);
+                        std::string key, value;
+
+                        std::getline(inner, key, '=');
+                        std::print("Got cookie '{}'\n", key);
+
+                        std::getline(inner, value, '=');
+                        cookies_[key] = value;
+                    }
+                }
+            }
+        }
+        template<typename T>
+        std::expected<T, error> get(const std::string &key) {
+            if(!cookies_.contains(key)) return std::unexpected(error::eNotFound);
+
+            try {
+                T t = pluggable<T>::deserialize(cookies_[key]);
+                return t;
+            } catch (...) {
+                return std::unexpected(error::eDeserialization);
+            }
+        }
+    };
+
+    cookie_jar cookies() {
+        return cookie_jar(*this);
+    }
+
+    const std::vector<std::byte> &body() const { return body_; }
     query_parameters &query() { return query_; }
 };
+

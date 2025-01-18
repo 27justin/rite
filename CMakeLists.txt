@@ -24,14 +24,14 @@ target_link_libraries(rite PUBLIC "ssl" "crypto")
 # Include modules
 file(GLOB rite_MODULES modules/*)
 foreach(module IN LISTS rite_MODULES)
-  message(INFO "Adding module ${module}")
+  message("Adding module ${module}")
   add_subdirectory(${module})
 endforeach()
 
 # Include examples
 file(GLOB rite_EXAMPLES examples/*)
 foreach(example IN LISTS rite_EXAMPLES)
-  message(INFO "Adding example ${example}")
+  message("Adding example ${example}")
   add_subdirectory(${example})
 endforeach()
 

@@ -79,6 +79,7 @@ rite::server<https>::on_read(connection<void> *socket) {
                         frame.data = std::vector<std::byte>(buf.data.get(), buf.data.get() + buf.len);
                         h2_sock->write(frame);
                     } while (!buf.last);
+                    response.trigger(http_response::event::finish);
 
                     // Release reference to allow the connection to drop
                     h2_sock->release();
