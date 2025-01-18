@@ -1,9 +1,9 @@
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
-#include <time.h>
 #include <iostream>
 #include <optional>
-#include <cstring>
+#include <time.h>
 
 #include <arpa/inet.h>
 #include <filesystem>
@@ -41,7 +41,6 @@ int
 main() {
     rite::runtime *runtime = new rite::runtime();
     runtime->worker_threads(8);
-
 
     // A layer represents the default behaviour of the server.
     // The default `layer` that we expose is a very simple
