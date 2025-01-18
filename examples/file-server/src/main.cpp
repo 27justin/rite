@@ -18,12 +18,9 @@
 #include <runtime.hpp>
 #include <server.hpp>
 
-#include <rite/session.hpp>
-
-#ifndef GITHUB_CI
-// GitHub CI runners do not have libmagic; provide a different implementation
-// for `guess_content_type` in this case.
 #include <magic.h>
+
+
 std::optional<std::string>
 guess_content_type(const std::filesystem::path &file) {
     const char *mime = nullptr;
@@ -47,12 +44,6 @@ guess_content_type(const std::filesystem::path &file) {
     magic_close(magic);
     return mime_type;
 }
-#else
-std::optional<std::string>
-guess_content_type(const std::filesystem::path &) {
-    return "application/octet-stream";
-}
-#endif
 
 int
 main() {
