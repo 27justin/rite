@@ -57,7 +57,7 @@ struct http_request {
         using ValueType = typename std::decay<T>::type;
 
         // Store the value in the context map
-        context_[typeid(ValueType).hash_code()] = std::make_any<ValueType>(std::forward<T>(value));
+        context_.emplace(typeid(ValueType).hash_code(), std::make_any<T>(value));
     }
 
     template<typename T>
@@ -101,6 +101,11 @@ struct http_request {
                 }
             }
         }
+
+        bool has(const std::string &key) {
+            return cookies_.contains(key);
+        }
+
         template<typename T>
         std::expected<T, error> get(const std::string &key) {
             if(!cookies_.contains(key)) return std::unexpected(error::eNotFound);

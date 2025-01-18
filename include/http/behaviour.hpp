@@ -15,10 +15,10 @@ namespace rite::http {
 class layer;
 class extension {
     public:
-    virtual void on_request(http_request &) = 0;
-    virtual void pre_send(http_request &, http_response &) = 0;
-    virtual void post_send(http_request &, http_response &) = 0;
-    virtual void on_hook(layer &) = 0;
+    virtual void on_request(http_request &) {};
+    virtual void pre_send(http_request &, http_response &) {};
+    virtual void post_send(http_request &, http_response &) {};
+    virtual void on_hook(layer &) {};
 };
 
 class layer {
@@ -59,6 +59,13 @@ private:
         requires std::derived_from<T, extension>
     void attach(Args... arguments) {
         extensions_.emplace_back(std::make_unique<T>(std::forward<Args>(arguments)...));
+        extensions_.back()->on_hook(*this);
+    }
+
+    template<typename T>
+        requires std::derived_from<T, extension>
+    void attach() {
+        extensions_.emplace_back(std::make_unique<T>());
         extensions_.back()->on_hook(*this);
     }
 

@@ -1,0 +1,69 @@
+#+AUTHOR: Justin Andreas Lacoste
+
+* Session
+
+A session extension for *rite*.
+
+** Example
+#+BEGIN_SRC c++
+  #include <rite/http.hpp>
+  #include <rite/http/request.hpp>
+  #include <rite/http/response.hpp>
+
+  #include <rite/server.hpp>
+  #include <rite/session.hpp>
+  #include <memory>
+
+  // For `INADDR_ANY`
+  #include <netinet/in.h>
+
+  using namespace rite;
+  int main() {
+      rite::runtime runtime;
+      runtime.worker_threads(2);
+
+      std::shared_ptr<http::layer> crud = std::make_shared<http::layer>();
+      crud->attach<extensions::session>();
+
+      crud->add_endpoint(http::endpoint {
+              .method = http_method::GET,
+              .path = "/api/v1/expensive-query",
+              .handler = [](http_request &request) -> http_response {
+                  // `sess` is a
+                  // std::shared_ptr<rite::http::session_handle> you
+                  // /could/ copy this out of the handler to modify
+                  // elsewhere.
+                  auto &sess = request.context<http::session>().value().get();
+                  time_t timestamp = time(nullptr);
+                  time_t last = sess->get<time_t>("last_access")
+                      .value_or(0);
+                  if((timestamp - last) < 30) {
+                      return http_response(http_status_code::eTooManyRequests, "You are being rate-limited!");
+                  }
+                  sess->set<time_t>("last_access", timestamp);
+
+                  // Go on...
+              },
+              .asynchronous = true
+          });
+
+      auto config = server<http>::config();
+      config
+          .behaviour(crud)
+          .ip(INADDR_ANY)
+          .port(8080);
+
+      server<http> entry(config);
+      runtime.attach<server<http>>(entry);
+      runtime.start();
+      return 0;
+  }
+#+END_SRC
+
+** Usage
+*** Using CMake
+#+BEGIN_SRC cmake
+  target_link_libraries(${PROJECT} PUBLIC session)
+#+END_SRC
+
+

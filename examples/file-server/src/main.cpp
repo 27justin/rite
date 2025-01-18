@@ -20,7 +20,6 @@
 
 #include <magic.h>
 
-
 std::optional<std::string>
 guess_content_type(const std::filesystem::path &file) {
     const char *mime = nullptr;
@@ -75,9 +74,9 @@ main() {
                 struct tm datetime = *localtime(&timestamp);
                 char buf[24];
                 strftime(buf, sizeof(buf), "%Y-%m-%d %T", &datetime);
-
                 std::cout << "[" << buf << "]: access " << file.string() << '\n';
             }
+
 
             if (std::filesystem::exists(file)) {
                 http_response response{};
