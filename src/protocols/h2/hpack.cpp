@@ -2,7 +2,6 @@
 #include "protocols/h2/headers.hpp"
 #include <algorithm>
 #include <cstdint>
-#include <stdexcept>
 
 #include <iostream>
 #include <utility>

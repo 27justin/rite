@@ -1,14 +1,14 @@
-#include <chrono>
 #include <cstdlib>
-#include <future>
+#include <ctime>
+#include <time.h>
 #include <iostream>
+#include <optional>
+#include <cstring>
 
 #include <arpa/inet.h>
 #include <filesystem>
 #include <iostream>
-#include <regex>
 #include <sys/socket.h>
-#include <thread>
 
 #include <http/behaviour.hpp>
 #include <http/endpoint.hpp>
@@ -18,26 +18,68 @@
 #include <runtime.hpp>
 #include <server.hpp>
 
+#include <magic.h>
+
+std::optional<std::string>
+guess_content_type(const std::filesystem::path &file) {
+    const char *mime;
+    magic_t     magic;
+
+    magic = magic_open(MAGIC_MIME_TYPE);
+    magic_load(magic, nullptr);
+    mime = magic_file(magic, file.c_str());
+
+    if (std::strlen(mime) == 0) {
+        return std::nullopt;
+    }
+
+    magic_close(magic);
+    return mime;
+}
+
 int
 main() {
     rite::runtime *runtime = new rite::runtime();
     runtime->worker_threads(8);
 
+
+    // A layer represents the default behaviour of the server.
+    // The default `layer` that we expose is a very simple
+    // path mapping controller suitable for CRUD applications.
+    //
+    // To cater to a large audience however; the https/http server
+    // both do not really care for whatever the layer (`behaviour` on
+    // the server instance) is, all it has to do is implement an
+    // `handle(http_request, std::function<void(http_response &&)>
+    // &&) -> void` function.
+    std::shared_ptr<rite::http::layer> lyr = std::make_shared<rite::http::layer>();
+
     // clang-format off
     rite::http::endpoint image {
         .method = http_method::GET,
         .path = rite::http::path("/{file:.*}"),
-        .handler = [](http_request &request, rite::http::path::result mapping) -> http_response {
+        .handler = [lyr](http_request &request, rite::http::path::result mapping) -> http_response {
             using path = std::filesystem::path;
             auto file_path = mapping.get<std::string>("file");
             path file = std::filesystem::path(*file_path);
+
+            { // Log
+                time_t timestamp = time(nullptr);
+                struct tm datetime = *localtime(&timestamp);
+                char buf[24];
+                strftime(buf, sizeof(buf), "%Y-%m-%d %T", &datetime);
+
+                std::cout << "[" << buf << "]: access " << file.string() << '\n';
+            }
+
 
             if (std::filesystem::exists(file)) {
                 http_response response{};
                 response.set_status_code(http_status_code::eOk);
 
                 request.set_context<std::FILE *>(std::fopen(file.c_str(), "rb"));
-                response.set_header("Content-Type", "text/plain");
+                auto content_type = guess_content_type(file);
+                response.set_header("Content-Type", content_type.value_or("application/octet-stream"));
                 response.set_content_length(std::filesystem::file_size(file));
 
                 response.event(http_response::event::chunk, [&](http_response &response) {
@@ -55,8 +97,8 @@ main() {
 
                 return response;
             } else {
-                std::cerr << "Tried to access file: " << file << std::endl;
-                return http_response(http_status_code::eNotFound, "File could not be found.");
+                // Use the generic 404 handler
+                return lyr->not_found(request);
             }
         },
         // Handler & response sending spawns in a separate thread.
@@ -64,15 +106,6 @@ main() {
     };
     // clang-format on
 
-    // A layer represents the default behaviour of the server.
-    // The default `layer` that we expose is a very simple
-    // path mapping controller suitable for CRUD applications.
-    //
-    // To cater to a large audience however; the https/http server
-    // both do not really care for whatever the layer (`behaviour` on the server instance)
-    // is, all it has to do is implement an `on_request(http_request) -> http_response`
-    // function.
-    std::shared_ptr<rite::http::layer> lyr = std::make_shared<rite::http::layer>();
     lyr->add_endpoint(image);
 
     // clang-format off

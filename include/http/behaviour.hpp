@@ -3,15 +3,12 @@
 #include <concepts>
 #include <functional>
 #include <future>
-#include <iostream>
-#include <regex>
-#include <stdexcept>
 #include <string>
-#include <unordered_map>
 
 #include "endpoint.hpp"
 #include "request.hpp"
 #include "response.hpp"
+#include "status_code.hpp"
 
 namespace rite::http {
 
@@ -25,8 +22,19 @@ class extension {
 };
 
 class layer {
+private:
+    http_response default_not_found(http_request &) const {
+        // TODO: Store version someplace to use here.
+        return http_response(http_status_code::eNotFound, std::format("404 Not Found<hr>rite/{}", "0.0.1"));
+    }
+
     public:
     enum class error { eNoEndpoint };
+
+    layer()
+        : not_found_handler_(std::bind(&layer::default_not_found, this, std::placeholders::_1)){
+    }
+
     void add_endpoint(rite::http::endpoint endpoint) {
         // Convert the path to a regex pattern
         endpoints_.emplace_back(endpoint);
@@ -105,13 +113,22 @@ class layer {
                 // Async automatically runs. Do not wait.
             }
         } else {
-            // not_found();
+            finish(not_found_handler_(req));
         }
+    }
+
+    http_response not_found(http_request &req) {
+        return not_found_handler_(req);
+    }
+
+    void set_custom_404(std::function<http_response(http_request &)> &&handler) {
+        this->not_found_handler_ = handler;
     }
 
     private:
     std::vector<rite::http::endpoint>       endpoints_;
     std::vector<std::unique_ptr<extension>> extensions_;
+    std::function<http_response(http_request &)> not_found_handler_;
 };
 
 }

@@ -29,7 +29,7 @@ rite::server<https>::on_accept(connection<void>::native_handle socket, struct so
         return connection;
     } catch (std::exception &e) {
         std::cerr << "TLS handshake failed: " << e.what() << std::endl;
-        return connection<void>::invalid;
+        return nullptr;
     }
 }
 

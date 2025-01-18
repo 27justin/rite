@@ -1,7 +1,6 @@
 #include <cassert>
 #include <netinet/in.h>
 #include <protocols/h2/headers.hpp>
-#include <stdexcept>
 
 h2::payload<h2::frame::HEADERS>::payload(const h2::frame &frame)
   : pad_length(0)

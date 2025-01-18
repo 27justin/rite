@@ -1,18 +1,12 @@
 #include <algorithm>
 #include <cassert>
-#include <cstdint>
 #include <cstring>
-#include <memory>
 #include <mutex>
 #include <netinet/in.h>
 #include <protocols/h2.hpp>
 #include <protocols/h2/connection.hpp>
 #include <stdexcept>
-#include <string>
 #include <sys/socket.h>
-
-#include <iomanip>
-#include <iostream>
 
 #include <netdb.h>
 #include <netinet/in.h>
@@ -253,7 +247,6 @@ start:
     }
 
     if (pos != span.end()) {
-        std::print("H2[process]: Going to start, data is not finished.\n");
         goto start;
     }
 out:
