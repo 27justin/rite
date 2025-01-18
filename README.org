@@ -1,16 +1,19 @@
 #+AUTHOR: Justin Andreas Lacoste
 * rite
 
-*rite* is a modern C++-based (web-)server framework.
+*rite* is a modern C++23 (web-)server framework.
 
-*rite* is currently UNIX-only.  It heavily relies on ~epoll~, while I
-would appreciate a Windows port of our networking implementation, I
-can't provide this myself.
+** Platforms
++ Linux
+
+*rite* is currently Linux only.  I do not have access to a windows
+development environment and have zero clue about windows networking.
+
+Contributions would be heavily appreciated though!
 
 ** Features
 + Asynchronous & concurrent by design
 + Programmable request pipeline (on_receive, pre_send, post_send)
-+ Highly extensible at every step of the pipeline
 + Support for HTTP/1.1 as well as HTTP/2 (TLS only, no h2c)
 
 ** Disclaimer
@@ -19,3 +22,6 @@ production use.  There are known race-conditions and potential buffer
 overflows that still have to be accounted for, this project is still
 in it's infancy and currently a playground for new ideas and API
 design.
+
+** Example
+Take a look at the [[examples/][examples folder]] to get introduced to programming with rite.
