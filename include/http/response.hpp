@@ -49,15 +49,20 @@ struct http_response {
 
     // http_response(const http_response &) = delete;
 
-    /// Create a HTTP response that has Content-Type: text/html and
-    /// the given parameters.
-    http_response(http_status_code status_code, std::string body)
+    // Create a http_response with given status code, content type and
+    // body. Ready to be shipped of.
+    http_response(http_status_code status_code, std::string content_type, std::string body)
       : status_code_(status_code)
       , channel(std::make_shared<jt::mpsc<rite::buffer, jt::fifo>>()) {
-        headers_["Content-Type"] = "text/html";
+        headers_["content-type"] = content_type;
         set_content_length(body.size());
         this->body(body);
     };
+
+    /// Create a HTTP response that has Content-Type: text/html and
+    /// the given parameters.
+    http_response(http_status_code status_code, std::string body)
+        : http_response(status_code, "text/html", body) {};
 
     http_status_code status_code() const { return status_code_; }
     http_status_code set_status_code(http_status_code code) {

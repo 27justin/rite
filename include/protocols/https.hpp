@@ -86,6 +86,7 @@ class rite::server<https> : public rite::server<void> {
     SSL_CTX *ctx_;
 
     public:
+    // TODO: Throw an exception should `behaviour` not be set on the config.
     server(const config &server_config);
 
     connection<void> *on_accept(connection<void>::native_handle socket, struct sockaddr_storage addr, socklen_t len) override;

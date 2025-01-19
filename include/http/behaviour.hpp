@@ -82,7 +82,12 @@ private:
 
         rite::http::endpoint    *endpoint = nullptr;
         rite::http::path::result mapping;
-        std::tie(endpoint, mapping) = find_endpoint(req);
+        try {
+            std::tie(endpoint, mapping) = find_endpoint(req);
+        } catch (error e) {
+            if (e == error::eNoEndpoint)
+                finish(not_found(req));
+        }
 
         if (endpoint) {
             // Determine the launch policy for executing the handler based on the endpoint's configuration.
@@ -119,8 +124,6 @@ private:
                     handler.get();
                 // Async automatically runs. Do not wait.
             }
-        } else {
-            finish(not_found_handler_(req));
         }
     }
 

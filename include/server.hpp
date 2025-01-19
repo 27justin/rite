@@ -35,7 +35,7 @@ class server {
     public:
     struct config {
         private:
-        ssize_t  max_connections_ = -1; // -1 defaults to SOMAX
+        ssize_t  max_connections_ = SOMAXCONN;
         uint16_t port_;
         uint64_t ip_;
         friend class server<T>;
@@ -164,6 +164,7 @@ rite::server<T>::operator()() {
                 }
             } else { // Client event
                 if (event.events & EPOLLIN) {
+                    std::print("Event on socket\n");
                     connection<void> *client = reinterpret_cast<connection<void> *>(connections_[event.data.u64]);
                     if (((uintptr_t)client & ((uintptr_t)1 << 63)) != 0) {
                         // Event was dispatched for client that has already been deallocated.
@@ -196,7 +197,7 @@ rite::server<T>::connection_sentinel(size_t connection_idx, rite::server<T> *ser
         auto                         next_wakeup = last_active + keep_alive;
 
         con->cv().wait_until(lk, next_wakeup, [&con]() { return (con->idle() && con->use_count() <= 0) || con->is_closed(); });
-        if ((con->idle() && con->use_count() <= 0) || con->is_closed())
+        if ((con->idle() && con->use_count() <= 0) || (con->is_closed() && con->use_count() <= 0))
             break;
     }
     connections_[connection_idx] = (connection<void> *)((uintptr_t)con | (((uintptr_t)1) << 63));

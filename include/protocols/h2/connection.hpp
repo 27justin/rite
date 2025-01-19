@@ -46,20 +46,31 @@ class connection<h2::protocol> : public connection<tls> {
     public:
     std::unique_ptr<h2::parameters> parameters_;
     std::map<uint32_t, h2::stream>  streams_;
+    http_request request;
 
     connection(connection<tls> &&channel)
       : connection<tls>(std::move(channel))
       , state_(CLIENT_PREFACE)
       , parameters_(std::make_unique<h2::parameters>()) {
+        keep_alive_ = minutes(5);
 
       };
 
-    std::optional<http_request> process(std::span<std::byte>);
+      enum class result {
+          eNewRequest,
+          eSettings,
+          eInvalid,
+          eEof,
+          eMore
+      };
+
+    result
+    process(std::span<const std::byte>::iterator &pos, std::span<const std::byte>::iterator end);
 
     // Terminate the connection with a GOAWAY
     void terminate();
 
-    std::expected<h2::frame, h2::frame_state>                                        read_frame(std::span<std::byte>::iterator &position, std::span<std::byte> data);
+    std::expected<h2::frame, h2::frame_state>                                        read_frame(std::span<const std::byte>::iterator &position, std::span<const std::byte> data);
     std::expected<std::vector<std::pair<std::string, std::string>>, h2::frame_state> header_frame(const h2::frame &frame);
 
     using connection<tls>::write;

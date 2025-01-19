@@ -22,8 +22,6 @@
 template<typename T>
 struct parser;
 
-class cookie_jar;
-
 struct http_request {
     public:
     std::string                          path_;

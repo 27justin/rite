@@ -21,18 +21,15 @@ class query_parameters {
     friend struct parser<query_parameters>;
 
     public:
-    // template<typename T>
-    // std::enable_if_t<std::is_same_v<T, typename pluggable<T>::value_type>, std::optional<T>> get(const std::string_view &key) const {
-    //     for (const auto &[pkey, value] : parameters_) {
-    //         if (key == pkey) {
-    //             std::stringstream ss(value);
-    //             T                 val;
-    //             ss >> val;
-    //             return val;
-    //         }
-    //     }
-    //     return std::nullopt;
-    // }
+    template<typename T>
+    std::optional<T> get(const std::string &key) const {
+        for (const auto &[pkey, value] : parameters_) {
+            if (key == pkey) {
+                return pluggable<T>::deserialize(value);
+            }
+        }
+        return std::nullopt;
+    }
 
     // // Return the first parameter named `key` for array types
     // template<typename T>

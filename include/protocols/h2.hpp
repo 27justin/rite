@@ -50,7 +50,7 @@ struct frame {
     }
 
     // Function to unpack from a byte array
-    bool unpack(const std::span<std::byte> buffer) {
+    bool unpack(std::span<const std::byte> buffer) {
         if (buffer.size() < 9)
             return false; // Ensure buffer is large enough
 

@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(rite CXX)
 
 option(RITE_BUILD_TESTS "Build rite tests" ON)
+option(RITE_BUILD_EXAMPLES "Build rite examples" ON)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,8 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 file(GLOB rite_SOURCES src/*.cpp src/http/*.cpp src/protocols/h2/*.cpp src/servers/*.cpp)
 
 add_library(rite STATIC ${rite_SOURCES})
-target_compile_options(rite PUBLIC "-std=c++23" "-g3")
-target_compile_options(rite PUBLIC "-Werror" "-Wno-unused-parameter" "-Wall" "-Wextra" "-pedantic" "-Wno-missing-field-initializers")
+target_compile_options(rite PRIVATE "-std=c++23" "-g3")
+target_compile_options(rite PRIVATE "-Werror" "-Wno-unused-parameter" "-Wall" "-Wextra" "-pedantic" "-Wno-missing-field-initializers")
 target_include_directories(rite PUBLIC include)
 
 set(JT_BUILD_EXAMPLES OFF)
@@ -28,12 +29,14 @@ foreach(module IN LISTS rite_MODULES)
   add_subdirectory(${module})
 endforeach()
 
+if(${RITE_BUILD_EXAMPLES})
 # Include examples
 file(GLOB rite_EXAMPLES examples/*)
 foreach(example IN LISTS rite_EXAMPLES)
   message("Adding example ${example}")
   add_subdirectory(${example})
 endforeach()
+endif()
 
 
 # Tests

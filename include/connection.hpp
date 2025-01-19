@@ -108,8 +108,8 @@ class connection {
     std::mutex              &mutex() { return lock_; }
     uintmax_t                use_count() const { return refs_.load(); }
 
-    std::lock_guard<std::mutex>  lock() { return std::lock_guard<std::mutex>(lock_); }
-    std::unique_lock<std::mutex> unique_lock() { return std::unique_lock<std::mutex>(lock_); }
+    virtual std::lock_guard<std::mutex>  lock() { return std::lock_guard<std::mutex>(lock_); }
+    virtual std::unique_lock<std::mutex> unique_lock() { return std::unique_lock<std::mutex>(lock_); }
 
     virtual ssize_t write(std::span<const std::byte> what, int flags) = 0;
     virtual ssize_t read(std::span<std::byte> target, int flags) = 0;

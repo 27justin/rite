@@ -18,7 +18,7 @@ constexpr std::string_view HTTP2_CLIENT_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\
 constexpr size_t           HTTP2_FRAME_SIZE = 9;
 
 std::expected<h2::frame, h2::frame_state>
-connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, std::span<std::byte> data) {
+connection<h2::protocol>::read_frame(std::span<const std::byte>::iterator &position, std::span<const std::byte> data) {
     // There is no frame that hasn't been fully parsed yet,
     // thus we can read the frame header.
     h2::frame frame_{};
@@ -36,6 +36,7 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
         if (frame_.length > MAX_FRAME_SIZE) {
             return std::unexpected(h2::frame_state::eTooBig);
         }
+
         // Read data
         frame_.data.reserve(frame_.length);
 
@@ -63,16 +64,19 @@ connection<h2::protocol>::read_frame(std::span<std::byte>::iterator &position, s
     return frame_;
 }
 
-std::optional<http_request>
-connection<h2::protocol>::process(std::span<std::byte> span) {
-    auto                        pos = span.begin();
-    std::optional<http_request> rval = std::nullopt;
-start:
+connection<h2::protocol>::result
+connection<h2::protocol>::process(std::span<const std::byte>::iterator &pos, std::span<const std::byte>::iterator end) {
+    if (pos >= end)
+        return result::eEof;
+
+    auto guard_ = lock();
+
+    std::span<const std::byte> remaining = std::span<const std::byte>(pos, end);
     switch (state_) {
         case CLIENT_PREFACE: {
             bool valid = false;
-            if (span.size() >= HTTP2_CLIENT_PREFACE.size()) {
-                auto preface = span.subspan(0, HTTP2_CLIENT_PREFACE.size());
+            if (remaining.size() >= HTTP2_CLIENT_PREFACE.size()) {
+                auto preface = remaining.subspan(0, HTTP2_CLIENT_PREFACE.size());
                 valid = std::equal(preface.cbegin(), preface.cend(), std::span<const std::byte>((const std::byte *)HTTP2_CLIENT_PREFACE.data(), HTTP2_CLIENT_PREFACE.size()).cbegin());
             }
             if (!valid) {
@@ -86,14 +90,14 @@ start:
             //
             // Thus; read the SETTINGS frame (if data is remainig)
             state_ = WAIT_CLIENT_SETTINGS;
-            __attribute__((fallthrough));
+            return result::eSettings;
         }
         case WAIT_CLIENT_SETTINGS: {
-            std::expected<h2::frame, h2::frame_state> settings = read_frame(pos, span);
+            std::expected<h2::frame, h2::frame_state> settings = read_frame(pos, remaining);
 
             // Wait for next packet
             if (settings == std::unexpected(h2::frame_state::eInsufficientData))
-                goto out;
+                return result::eMore;
             else if (!settings.has_value()) {
                 throw std::runtime_error("Expected client settings, but got stream error");
             }
@@ -109,6 +113,7 @@ start:
             */
             if (settings->length % 6 != 0) {
                 terminate();
+                return result::eInvalid;
             }
 
             /*
@@ -132,28 +137,31 @@ start:
               preface.
             */
             state_ = IDLE;
-            __attribute__((fallthrough));
+            return result::eSettings;
         }
         case IDLE: {
-            std::expected<h2::frame, h2::frame_state> frame = read_frame(pos, span);
-            if (frame == std::unexpected(h2::frame_state::eInsufficientData))
-                goto out;
-            else if (!frame.has_value()) {
+            std::expected<h2::frame, h2::frame_state> frame = read_frame(pos, remaining);
+            if (frame == std::unexpected(h2::frame_state::eInsufficientData)) {
+                return result::eMore;
+            } else if (!frame.has_value()) {
                 terminate();
-                goto out;
+                std::exit(1);
+                return result::eInvalid;
             }
 
             streams_[frame->stream_identifier].stream_id = frame->stream_identifier;
-
             switch (frame->type) {
                 case h2::frame::type::SETTINGS: {
                     // Client likely acknowledged our settings.
                     // The HTTP specification says that the ACK should happen, but not in a specific order
                     // thus we handle it as though optional.
                     if ((frame->flags & h2::frame::characteristics<h2::frame::SETTINGS>::ACK) == 1) {
-                        std::print("H2[process]: Client acknowledged settings\n");
+                    } else {
+                        // We have to re-send ACK
+                        h2::frame response{ .length = 0, .type = h2::frame::type::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .stream_identifier = 0x0 };
+                        write(response);
                     }
-                    break;
+                    return result::eSettings;
                 }
                 case h2::frame::type::PING: {
                     // Send PING+ACK
@@ -164,12 +172,12 @@ start:
                                    .stream_identifier = frame->stream_identifier,
                                    .data = std::vector<std::byte>(8) };
                     write(ack);
-                    break;
+                    return result::eSettings;
                 }
                 case h2::frame::type::WINDOW_UPDATE: {
                     // Flow control:
                     // TODO: We do not support flow control /yet/. I may add this in the future
-                    break;
+                    return result::eSettings;
                 }
                 case h2::frame::type::CONTINUATION:
                     __attribute__((fallthrough));
@@ -180,21 +188,21 @@ start:
                     auto result = parameters_->hpack.rx.parse(*frame);
                     switch (result) {
                         case h2::hpack::error::eUnknownHeader: {
-                            // TODO: throw decoding error and (probably) terminate the connection
-                            break;
+                            terminate();
+                            return result::eInvalid;
                         }
                         case h2::hpack::error::eInvalid: {
                             terminate();
-                            return std::nullopt;
+                            return result::eInvalid;
                         }
                         case h2::hpack::error::eSizeUpdate: {
                             // This warrants an ACK to the client
                             write(h2::frame{ .length = 0, .type = h2::frame::SETTINGS, .flags = h2::frame::characteristics<h2::frame::SETTINGS>::ACK, .data = {} });
-                            __attribute__((fallthrough));
+                            return result::eMore;
                         }
                         case h2::hpack::error::eMore: {
                             std::print("H2[process]: HPACK is missing data (no END_HEADERS bit set), waiting for more CONTINUATION or HEADERS frames.\n");
-                            break;
+                            return result::eMore;
                         }
                         case h2::hpack::error::eDone: {
                             // Save the headers for later (until after request body, or now if END_STREAM is set.)
@@ -204,15 +212,15 @@ start:
                             if ((frame->flags & h2::frame::characteristics<h2::frame::HEADERS>::END_STREAM) == 0) {
                                 // Remote will send a request body. We'll have to wait for that.
                                 std::print("H2[handle]: Missing END_STREAM, waiting for data...\n");
-                                goto start;
+                                return result::eMore;
                             }
                             // Otherwise transition stream to
                             // half-closed (remote won't send any more
                             // data.)
                             streams_[frame->stream_identifier].state = h2::stream::half_closed;
                             // Consumes the actual headers to produce a request.
-                            rval = finish_stream(streams_[frame->stream_identifier]);
-                            break;
+                            request = finish_stream(streams_[frame->stream_identifier]);
+                            return result::eNewRequest;
                         }
                     }
                     break;
@@ -222,20 +230,27 @@ start:
                     if (!streams_.contains(frame->stream_identifier)) {
                         std::print("Terminating HTTP/2 connection. Client sent data on non-existant stream.\n");
                         terminate();
-                        goto out;
+                        return result::eInvalid;
                     }
 
                     auto &stream = streams_[frame->stream_identifier];
                     stream.data.insert(stream.data.end(), frame->data.begin(), frame->data.end());
 
                     if ((frame->flags & h2::frame::characteristics<h2::frame::DATA>::END_STREAM) != 0) {
+                        std::print("Stream {} was terminated with data\n", frame->stream_identifier);
                         // Handle the request, we parsed it's body.
-                        rval = finish_stream(streams_[frame->stream_identifier]);
+                        request = finish_stream(streams_[frame->stream_identifier]);
+                        return result::eNewRequest;
                     }
-                    break;
+                    return result::eMore;
+                }
+                case h2::frame::type::RST_STREAM: {
+                    streams_[frame->stream_identifier].state = h2::stream::closed;
+                    return result::eMore;
                 }
                 default: {
                     std::print("H2[process]: Received unsupported frame during idle {}\n", (uint8_t)frame->type);
+                    return result::eMore;
                 }
             }
             break;
@@ -245,13 +260,7 @@ start:
             std::exit(1);
         }
     }
-
-    if (pos != span.end()) {
-        goto start;
-    }
-out:
-    lock_.unlock();
-    return rval;
+    return result::eMore;
 }
 
 int
@@ -281,11 +290,31 @@ connection<h2::protocol>::finish_stream(h2::stream &stream) {
         return std::find_if(stream.headers.cbegin(), stream.headers.cend(), [&key](const h2::hpack::header &h) { return h.key == key; });
     };
 
+    auto path = get_header(":path");
+    auto method = get_header(":method");
+
+    if(path == stream.headers.cend() || method == stream.headers.cend()) {
+        std::print("Stream {} is missing headers but sent END_STREAM, can't process.\n", stream.stream_id);
+        std::print("Headers: {}.\n", stream.headers.size());
+
+        for(auto &h : stream.headers) {
+            std::print("    {}: {}\n", h.key, h.value);
+        }
+
+        http_request rval{};
+        rval.path_ = "/error";
+        rval.method_ = http_method::GET;
+        rval.version_ = http_version::HTTP_2_0;
+        rval.set_context<h2::stream_id>(h2::stream_id(stream.stream_id));
+        rval.client_ = this;
+        return rval;
+    }
+
     http_request rval{};
-    rval.path_ = (*get_header(":path")).value;
+    rval.path_ = (*path).value;
 
     // Set the method
-    auto method_str = (*get_header(":method")).value;
+    auto method_str = (*method).value;
     if (method_str == "GET") {
         rval.method_ = http_method::GET;
     } else if (method_str == "HEAD") {
@@ -316,6 +345,8 @@ connection<h2::protocol>::finish_stream(h2::stream &stream) {
     if (rval.path_.find('?') != std::string::npos) {
         query_parameters query = parser<query_parameters>{}.parse(rval.path_).value();
         rval.query_ = query;
+        // Remove the query parameters
+        rval.path_.erase(rval.path_.find('?'));
     }
 
     rval.set_context<h2::stream_id>(h2::stream_id(stream.stream_id));
