@@ -284,6 +284,38 @@ connection<h2::protocol>::terminate() {
     close();
 }
 
+#include <cctype>
+
+std::string uri_decode(const std::string &encoded) {
+    std::string decoded;
+    decoded.reserve(encoded.size()); // Reserve space to avoid multiple allocations
+
+    for (size_t i = 0; i < encoded.size(); ++i) {
+        if (encoded[i] == '%') {
+            // Check if there are enough characters for a percent-encoded sequence
+            if (i + 2 < encoded.size() && std::isxdigit(encoded[i + 1]) && std::isxdigit(encoded[i + 2])) {
+                // Convert the hex value to a character
+                std::string hex = encoded.substr(i + 1, 2);
+                char decodedChar = static_cast<char>(std::stoi(hex, nullptr, 16));
+                decoded.push_back(decodedChar);
+                i += 2; // Skip the next two characters
+            } else {
+                // If the percent encoding is malformed, just add the '%' character
+                decoded.push_back(encoded[i]);
+            }
+        } else if (encoded[i] == '+') {
+            // Convert '+' to space
+            decoded.push_back(' ');
+        } else {
+            // Regular character, just add it
+            decoded.push_back(encoded[i]);
+        }
+    }
+
+    return decoded;
+}
+
+
 http_request
 connection<h2::protocol>::finish_stream(h2::stream &stream) {
     auto get_header = [&stream](std::string key) {
@@ -341,6 +373,10 @@ connection<h2::protocol>::finish_stream(h2::stream &stream) {
     }
 
     rval.version_ = http_version::HTTP_2_0;
+
+    // Decode URI components
+    // TODO: Streamline this in a better way, i.e. a setter.
+    rval.path_ = uri_decode(rval.path_);
 
     if (rval.path_.find('?') != std::string::npos) {
         query_parameters query = parser<query_parameters>{}.parse(rval.path_).value();

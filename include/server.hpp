@@ -164,7 +164,6 @@ rite::server<T>::operator()() {
                 }
             } else { // Client event
                 if (event.events & EPOLLIN) {
-                    std::print("Event on socket\n");
                     connection<void> *client = reinterpret_cast<connection<void> *>(connections_[event.data.u64]);
                     if (((uintptr_t)client & ((uintptr_t)1 << 63)) != 0) {
                         // Event was dispatched for client that has already been deallocated.

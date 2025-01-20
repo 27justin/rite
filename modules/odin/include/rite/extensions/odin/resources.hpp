@@ -229,7 +229,7 @@ hr {
     border-bottom: 2px dotted var(--primary);
 
     & [role="tooltip-text"] {
-        visibility: hidden;
+        display: none;
         min-width: 120px;
         width: max-content;
         background-color: black;
@@ -281,7 +281,7 @@ hr {
     }
 
     &:hover :is([role="tooltip-text"],[role="tooltip-content"]) {
-        visibility: visible;
+        display: block;
     }
 }
 

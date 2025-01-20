@@ -62,12 +62,12 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
 
                 std::print("Asked for header table update to: {}\n", size);
 
-                // if (size < header_map_.size()) {
-                    // while (header_map_.size() > size) {
+                if (size < header_map_.size()) {
+                    while (size < header_map_.size()) {
                         // Remove oldest entry
-                        // header_map_.pop_back();
-                    // }
-                // } // TODO: I don't think that we have to handle the `else`
+                        header_map_.pop_back();
+                    }
+                } // TODO: I don't think that we have to handle the `else`
                 // in our case.  but read up on RFC 7541 Section 4.2.
                 // Maximum Table Size to be sure.
                 // return h2::hpack::error::eSizeUpdate;

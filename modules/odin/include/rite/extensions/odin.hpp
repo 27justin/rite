@@ -69,6 +69,7 @@ struct odin_http_request {
 class odin : public rite::http::extension {
     public:
     std::atomic<float> rps_ = 0.0;
+    std::atomic<size_t> request_count_ = 0.0;
     std::mutex         mtx;
     odin_config        config_;
 

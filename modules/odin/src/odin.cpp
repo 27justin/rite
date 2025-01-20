@@ -54,7 +54,7 @@ odin::on_request(http_request &request) {
         request.set_context<odin_admin_user>(odin_admin_user{});
         return;
     }
-    rps_ += 1.0;
+    request_count_ += 1.0;
     request.set_context<odin_timing>(odin_timing{ .received = steady_clock::now() });
 }
 
@@ -106,8 +106,11 @@ odin::post_send(http_request &request, http_response &response) {
 
 void
 odin::calculate_rps() {
-    // Reset RPS for the next second
-    rps_ = 0.0;
+    // Smoothing factor (0 < alpha < 1)
+    const double alpha = 0.1; // Adjust this value for more or less smoothing
+    double current_rps = request_count_; // Current RPS is the count of requests in the last second
+    rps_ = (1 - alpha) * rps_ + alpha * current_rps; // Exponential smoothing
+    request_count_ = 0; // Reset request count for the next second
 }
 
 odin_percentiles
@@ -193,8 +196,7 @@ render(const std::string_view &templateStr, const std::unordered_map<std::string
 
 http_response
 odin::css(http_request &request, path::result) {
-    http_response response(http_status_code::eOk, std::string(DEFAULT_CSS));
-    response.set_header("Content-Type", "text/css");
+    http_response response(http_status_code::eOk, "text/css", std::string(DEFAULT_CSS));
     return response;
 }
 
@@ -228,55 +230,55 @@ serialize_odin_request(const odin_http_request &r) {
 
 http_response
 odin::card(http_request &request, path::result) {
-    // auto metrics = request.query().get<std::vector<std::string>>("metric");
-    // if (!metrics.has_value() || (metrics.has_value() && metrics->size() < 1))
-        // return http_response(http_status_code::eBadRequest, "");
+    auto metrics = request.query().get<std::vector<std::string>>("metric");
+    if (!metrics.has_value() || (metrics.has_value() && metrics->size() < 1))
+        return http_response(http_status_code::eBadRequest, "");
 
-//     constexpr std::string_view template_ = R"(
-// <div class="card">
-// <p class="tooltip inline">%name
-// <span role="tooltip-text">%explanation</span></p>
-// <p class="big">%value</p>
-// </div>
-// )";
+    constexpr std::string_view template_ = R"(
+<div class="card">
+<p class="tooltip inline">%name
+<span role="tooltip-text">%explanation</span></p>
+<p class="big">%value</p>
+</div>
+)";
 
     std::optional<odin_percentiles> percentile;
     std::string                     output_ = "";
-    // for (const std::string &metric : metrics.value()) {
-    //     if (metric == "P99") {
-    //         if (!percentile)
-    //             percentile = calculate_percentiles();
-    //         output_ += render(
-    //           template_, { { "name", "99th Percentile" }, { "value", std::format("{}ms", percentile->p99) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
-    //     } else if (metric == "P90") {
-    //         if (!percentile)
-    //             percentile = calculate_percentiles();
-    //         output_ += render(
-    //           template_, { { "name", "90th Percentile" }, { "value", std::format("{}ms", percentile->p90) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
-    //     } else if (metric == "P75") {
-    //         if (!percentile)
-    //             percentile = calculate_percentiles();
-    //         output_ += render(
-    //           template_, { { "name", "75th Percentile" }, { "value", std::format("{}ms", percentile->p75) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
-    //     } else if (metric == "P50") {
-    //         if (!percentile)
-    //             percentile = calculate_percentiles();
-    //         output_ += render(
-    //           template_, { { "name", "50th Percentile" }, { "value", std::format("{}ms", percentile->p50) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
-    //     } else if (metric == "RPS") {
-    //         output_ += render(template_, { { "name", "RPS" }, { "value", std::format("{}", rps_.load()) }, { "explanation", "Requests per second" } });
-    //     } else if (metric == "total_served") {
-    //         output_ += render(template_, { { "name", "Total Requests" }, { "value", std::format("{}", requests_served_.load()) }, { "explanation", "Requests since server start" } });
-    //     } else if (metric == "2xx") {
-    //         output_ += render(template_, { { "name", "OK" }, { "value", std::format("{}", status_code_.ok.load()) }, { "explanation", "Responses sent with status code 200-299" } });
-    //     } else if (metric == "4xx") {
-    //         output_ +=
-    //           render(template_, { { "name", "Client Error" }, { "value", std::format("{}", status_code_.client_error.load()) }, { "explanation", "Responses sent with status code 400-499" } });
-    //     } else if (metric == "5xx") {
-    //         output_ +=
-    //           render(template_, { { "name", "Server Error" }, { "value", std::format("{}", status_code_.server_error.load()) }, { "explanation", "Responses sent with status code 500-599" } });
-    //     }
-    // }
+    for (const std::string &metric : metrics.value()) {
+        if (metric == "P99") {
+            if (!percentile)
+                percentile = calculate_percentiles();
+            output_ += render(
+              template_, { { "name", "99th Percentile" }, { "value", std::format("{}ms", percentile->p99) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
+        } else if (metric == "P90") {
+            if (!percentile)
+                percentile = calculate_percentiles();
+            output_ += render(
+              template_, { { "name", "90th Percentile" }, { "value", std::format("{}ms", percentile->p90) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
+        } else if (metric == "P75") {
+            if (!percentile)
+                percentile = calculate_percentiles();
+            output_ += render(
+              template_, { { "name", "75th Percentile" }, { "value", std::format("{}ms", percentile->p75) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
+        } else if (metric == "P50") {
+            if (!percentile)
+                percentile = calculate_percentiles();
+            output_ += render(
+              template_, { { "name", "50th Percentile" }, { "value", std::format("{}ms", percentile->p50) }, { "explanation", "The sample size for percentiles is the most recent 32768 requests." } });
+        } else if (metric == "RPS") {
+            output_ += render(template_, { { "name", "RPS" }, { "value", std::format("{:.1f}", rps_.load()) }, { "explanation", "Requests per second" } });
+        } else if (metric == "total_served") {
+            output_ += render(template_, { { "name", "Total Requests" }, { "value", std::format("{}", requests_served_.load()) }, { "explanation", "Requests since server start" } });
+        } else if (metric == "2xx") {
+            output_ += render(template_, { { "name", "OK" }, { "value", std::format("{}", status_code_.ok.load()) }, { "explanation", "Responses sent with status code 200-299" } });
+        } else if (metric == "4xx") {
+            output_ +=
+              render(template_, { { "name", "Client Error" }, { "value", std::format("{}", status_code_.client_error.load()) }, { "explanation", "Responses sent with status code 400-499" } });
+        } else if (metric == "5xx") {
+            output_ +=
+              render(template_, { { "name", "Server Error" }, { "value", std::format("{}", status_code_.server_error.load()) }, { "explanation", "Responses sent with status code 500-599" } });
+        }
+    }
 
     http_response response(http_status_code::eOk, std::string(output_));
     response.set_header("Content-Type", "text/html");
@@ -285,15 +287,15 @@ odin::card(http_request &request, path::result) {
 
 http_response
 odin::request_list(http_request &request, path::result) {
-    // size_t num = request.query().get<size_t>("num").value_or(20);
+    size_t num = request.query().get<size_t>("num").value_or(20);
 
     std::string body = "";
-    // {
-        // std::lock_guard<std::mutex> lock(ring_buffer_mtx_);
-        // for (size_t i = 0; i < std::min(num, ring_buffer_.size()); ++i) {
-            // body += serialize_odin_request(ring_buffer_[i]);
-        // }
-    // }
+    {
+        std::lock_guard<std::mutex> lock(ring_buffer_mtx_);
+        for (size_t i = 0; i < std::min(num, ring_buffer_.size()); ++i) {
+            body += serialize_odin_request(ring_buffer_[i]);
+        }
+    }
 
     http_response response(http_status_code::eOk, body);
     return response;
