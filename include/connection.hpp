@@ -106,7 +106,7 @@ class connection {
 
     std::condition_variable &cv() { return cv_; }
     std::mutex              &mutex() { return lock_; }
-    uintmax_t                use_count() const { return refs_.load(); }
+    intmax_t                use_count() const { return refs_.load(); }
 
     virtual std::lock_guard<std::mutex>  lock() { return std::lock_guard<std::mutex>(lock_); }
     virtual std::unique_lock<std::mutex> unique_lock() { return std::unique_lock<std::mutex>(lock_); }

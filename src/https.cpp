@@ -44,8 +44,14 @@ rite::server<https>::on_read(connection<void> *socket) {
         ssize_t bytes = 0;
         {
             auto lock_ = socket->lock();
-            bytes = socket->read(std::span<std::byte>(buffer.get(), 16384), 0);
-            if (bytes < 1) {
+            bytes = socket->read(std::span<std::byte>(buffer.get(), 65535), 0);
+            if (bytes == 0) {
+                // EOF
+                socket->release();
+                socket->close();
+                return;
+            }else if(bytes < 0) {
+                // TODO: Check for actual errors (i.e. EAGAIN | EWOULDBLOCK)
                 socket->release();
                 return;
             }

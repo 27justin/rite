@@ -141,6 +141,7 @@ rite::server<T>::operator()() {
                     connection<void> *con = on_accept(client_socket, client_address, client_address_len);
                     if(con == nullptr) {
                         // Failed to accept; ignore.
+                        delete con;
                         continue;
                     }
 
