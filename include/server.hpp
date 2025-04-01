@@ -200,6 +200,7 @@ rite::server<T>::connection_sentinel(size_t connection_idx, rite::server<T> *ser
         if ((con->idle() && con->use_count() <= 0) || (con->is_closed() && con->use_count() <= 0))
             break;
     }
+
     connections_[connection_idx] = (connection<void> *)((uintptr_t)con | (((uintptr_t)1) << 63));
     delete con;
 }

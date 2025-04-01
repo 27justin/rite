@@ -13,6 +13,13 @@ struct parameters {
         parser<h2::hpack>     rx;
         serializer<h2::hpack> tx;
     } hpack;
+
+    parameters() {
+        hpack.tx = serializer<h2::hpack>();
+        hpack.rx = parser<h2::hpack>();
+    }
+
+    ~parameters() {}
 };
 
 struct stream {
@@ -47,6 +54,10 @@ class connection<h2::protocol> : public connection<tls> {
     std::unique_ptr<h2::parameters> parameters_;
     std::map<uint32_t, h2::stream>  streams_;
     http_request request;
+
+    connection() = delete;
+    connection(const connection<h2::protocol> &) = delete;
+    connection(connection<h2::protocol> &&) = delete;
 
     connection(connection<tls> &&channel)
       : connection<tls>(std::move(channel))

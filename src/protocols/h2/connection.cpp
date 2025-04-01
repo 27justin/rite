@@ -238,7 +238,7 @@ connection<h2::protocol>::process(std::span<const std::byte>::iterator &pos, std
 
                     if ((frame->flags & h2::frame::characteristics<h2::frame::DATA>::END_STREAM) != 0) {
                         std::print("Stream {} was terminated with data\n", frame->stream_identifier);
-                        // Handle the request, we parsed it's body.
+                        // Handle the request, we parsed its body.
                         request = finish_stream(streams_[frame->stream_identifier]);
                         return result::eNewRequest;
                     }
@@ -389,7 +389,5 @@ connection<h2::protocol>::finish_stream(h2::stream &stream) {
     rval.client_ = this;
     rval.body_ = std::move(stream.data);
 
-    // Clean up our memory.
-    stream.data.clear();
     return rval;
 }

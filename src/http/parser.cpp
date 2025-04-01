@@ -5,6 +5,7 @@
 #include "connection.hpp"
 #include "http/parser.hpp"
 #include "http/request.hpp"
+#include <iostream>
 
 bool
 // parser<http_request>::parse(const std::shared_ptr<connection> &conn, std::span<const std::byte> data, http_request &req) {
@@ -72,7 +73,7 @@ parser<http_request>::parse(connection<void> *conn, std::span<const std::byte> d
     req.path_ = path;
 
     // Parse headers
-    while (std::getline(request_stream, line) && !line.empty()) {
+    while (std::getline(request_stream, line) && (!line.empty() && line != "\r")) {
         auto colon_pos = line.find(':');
         if (colon_pos != std::string::npos) {
             std::string key = line.substr(0, colon_pos);

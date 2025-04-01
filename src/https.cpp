@@ -124,6 +124,7 @@ rite::server<https>::on_read(connection<void> *socket) {
                                     if (result < 0) {
                                         // TODO: Handle properly.
                                         SSL_get_error(h2_sock->ssl(), result);
+                                        response.trigger(http_response::event::finish);
                                         throw std::runtime_error("failed to write data to sock");
                                     }
                                     // Update the offset for the next slice

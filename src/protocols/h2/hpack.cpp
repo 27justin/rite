@@ -87,7 +87,7 @@ parser<h2::hpack>::parse(const h2::frame &frame) {
                     key = header_by_index(index)->key;
                 }
                 value = parse_string(pos, payload);
-                decoded_.push_back(h2::hpack::header{ key, value });
+                decoded_.emplace_back(h2::hpack::header { key, value });
             }
         next:
             if (pos == _begin) {
